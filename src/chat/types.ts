@@ -1,0 +1,178 @@
+/**
+ * Transport-agnostic chat types.
+ *
+ * The app talks to chat exclusively through `ChatAdapter`. The shipped
+ * implementation (`./nostr`) speaks Nostr NIP-01 over a relay WebSocket, which
+ * is the same wire protocol Buzz (github.com/block/buzz) speaks — so pointing
+ * `EXPO_PUBLIC_NOSTR_RELAY` at a Buzz relay is all it takes to run this against
+ * Buzz. Swapping in a different backend later means writing one new adapter.
+ */
+
+/**
+ * Honest view of the relay socket.
+ *
+ * `unavailable` is distinct from `offline` on purpose: offline means we have an
+ * identity and a socket that is down and retrying, whereas unavailable means
+ * there is no signed-in user, so no keypair was derived and no socket was ever
+ * opened. Collapsing the two makes the UI claim it is "retrying" when nothing
+ * is happening at all.
+ *
+ * `authenticating` and `not-a-member` exist for closed relays like Buzz, which
+ * require NIP-42 AUTH before any subscription and reject non-members outright
+ * with `restricted: not a relay member`. That is a membership problem, not a
+ * connectivity problem, and telling the user "offline" would send them chasing
+ * their network instead of an invite code.
+ */
+export type ChatConnectionStatus =
+  | "unavailable"
+  | "connecting"
+  | "authenticating"
+  | "not-a-member"
+  | "live"
+  | "offline"
+
+export type ChatChannelKind = "public" | "dm"
+
+export type ChatChannel = {
+  /** The value that appears in the `/chat/[id]` route. */
+  id: string
+  kind: ChatChannelKind
+  name: string
+  topic: string | null
+  /** Ionicons glyph used for public rooms; DMs render an Avatar instead. */
+  icon: string | null
+  avatarUrl: string | null
+  /**
+   * Nostr-level addressing, filled in by the adapter.
+   * - public rooms: the NIP-28 kind-40 event id the room's messages tag.
+   * - DMs: the counterparty's 32-byte x-only public key, hex encoded.
+   */
+  address: string
+}
+
+export type ChatMessage = {
+  /** The Nostr event id — stable, so optimistic sends dedupe against the echo. */
+  id: string
+  channelId: string
+  /** Author's x-only public key, hex. */
+  authorId: string
+  body: string
+  /** Epoch seconds, as Nostr stores it. */
+  createdAt: number
+  mine: boolean
+  /** True between local append and the relay's OK. */
+  pending?: boolean
+  /** True when the relay rejected it or the socket never came up. */
+  failed?: boolean
+}
+
+/** NIP-01 kind-0 metadata, the closest thing Nostr has to a profile. */
+export type ChatProfile = {
+  pubkey: string
+  name: string | null
+  avatarUrl: string | null
+}
+
+export type ChatIdentity = {
+  /** x-only public key, hex. */
+  pubkey: string
+  /** NIP-19 bech32 encoding of the same key — what users see and share. */
+  npub: string
+}
+
+export type ChatSubscription = { close: () => void }
+
+/**
+ * Which dialects the connected relay speaks, read from its NIP-11 document
+ * rather than assumed. The Buzz relay advertises NIP-29 groups and NIP-17
+ * DMs; a typical public relay advertises neither and wants NIP-28 and NIP-04.
+ * Detecting instead of hardcoding is what lets one adapter serve both.
+ */
+export type RelayCapabilities = {
+  groups: "nip29" | "nip28"
+  dms: "nip17" | "nip04"
+  authRequired: boolean
+  /** Relay-declared ceilings; we stay under them rather than get truncated. */
+  maxFilters: number
+  maxLimit: number
+  maxContentLength: number
+  maxTagValuesPerFilter: number
+  /** True when the relay exposes the Buzz invite/join HTTP API. */
+  supportsInvites: boolean
+  relayName: string | null
+}
+
+export type ChatJoinResult = { status: "joined" | "already_member" }
+
+export type ChatAdapter = {
+  readonly id: string
+  readonly relayUrl: string
+
+  /** Resolves (creating on first use) the signed-in user's chat keypair. */
+  identity(): Promise<ChatIdentity>
+
+  status(): ChatConnectionStatus
+  onStatus(listener: (status: ChatConnectionStatus) => void): () => void
+
+  /**
+   * The channel list, as a live subscription.
+   *
+   * Not a plain getter, because on a NIP-29 relay the rooms exist server-side
+   * and must be *discovered* (kind 39000 metadata) rather than invented by the
+   * client. On a plain public relay this emits the code-defined NIP-28 rooms
+   * immediately and never changes.
+   */
+  subscribeChannels(onChannels: (channels: ChatChannel[]) => void): ChatSubscription
+
+  /** What the relay actually supports, from its NIP-11 document. */
+  capabilities(): Promise<RelayCapabilities>
+
+  /**
+   * Redeem an invite code for membership of a closed relay. `ageConfirmed`
+   * must come from a real affirmative user action, not a default.
+   */
+  joinWithInvite(code: string, ageConfirmed: boolean): Promise<ChatJoinResult>
+
+  /** Turn a `/chat/[id]` param into a channel, hitting Supabase for DMs. */
+  resolveChannel(routeId: string): Promise<ChatChannel | null>
+
+  /**
+   * Live subscription across one or more channels: backfills recent history,
+   * then streams new messages. One relay REQ covers the whole set.
+   */
+  subscribeMessages(
+    channels: ChatChannel[],
+    handlers: {
+      onMessages: (messages: ChatMessage[]) => void
+      onReady?: () => void
+      onError?: (message: string) => void
+    },
+    limitPerChannel?: number,
+  ): ChatSubscription
+
+  /** Fetch kind-0 metadata for the given authors. */
+  subscribeProfiles(
+    pubkeys: string[],
+    onProfiles: (profiles: ChatProfile[]) => void,
+  ): ChatSubscription
+
+  /**
+   * Sign and publish a message.
+   *
+   * `onPending` fires as soon as the event is signed — before it reaches the
+   * relay — carrying the final event id, so the UI can append the message
+   * immediately and have the relay's echo deduplicate against it. The promise
+   * resolves with the confirmed message, or rejects if the relay refused it.
+   */
+  send(
+    channel: ChatChannel,
+    body: string,
+    onPending?: (message: ChatMessage) => void,
+  ): Promise<ChatMessage>
+
+  /**
+   * Publish our own kind-0 metadata so peers render a name and avatar instead
+   * of a hex key. Fire-and-forget; failures are not worth surfacing.
+   */
+  announce(profile: { name: string | null; avatarUrl: string | null }): void
+}
