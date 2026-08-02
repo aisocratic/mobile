@@ -30,7 +30,13 @@ const FEATURE_ROUTES: Record<string, Parameters<typeof isEnabled>[0]> = {
   chat: "chat",
   invite: "chat",
   connections: "connections",
-  member: "connections",
+  // Not "connections": a person here is reached from chat's People segment
+  // (routes straight to `/chat/[id]`, so this screen itself is only linked
+  // from the Connections tab today) and hosts the Message button that is
+  // itself gated on chat. Gating it by "connections" would make it
+  // unreachable in exactly the build where chat — and messaging a member you
+  // just found — is on.
+  member: "chat",
   feed: "feed",
   events: "events",
   event: "events",

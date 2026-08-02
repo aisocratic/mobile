@@ -1,9 +1,21 @@
 import { Ionicons } from "@expo/vector-icons"
 import { useRouter } from "expo-router"
-import React, { useCallback } from "react"
-import { FlatList, Pressable, StyleSheet, View } from "react-native"
+import React, { useCallback, useMemo, useState } from "react"
+import { FlatList, Pressable, RefreshControl, StyleSheet, View } from "react-native"
 
-import { Avatar, Divider, EmptyState, ErrorState, Loading, Muted, Txt } from "@/components/ui"
+import { filterCommunityMembers, useCommunityMembers, type CommunityMember } from "@/api/people"
+import {
+  Avatar,
+  Divider,
+  EmptyState,
+  ErrorState,
+  Field,
+  Loading,
+  Muted,
+  SegmentedControl,
+  Txt,
+} from "@/components/ui"
+import { FadeIn } from "@/components/fade-in"
 import {
   RELAY_URL,
   shortNpub,
@@ -84,7 +96,7 @@ function IdentityBar({ status }: { status: ChatConnectionStatus }) {
   )
 }
 
-/* ------------------------------------------------------------------ row */
+/* ---------------------------------------------------------- channel row */
 
 function ChannelRow({ summary, onPress }: { summary: ChannelSummary; onPress: () => void }) {
   const p = usePalette()
@@ -156,51 +168,43 @@ function ChannelRow({ summary, onPress }: { summary: ChannelSummary; onPress: ()
   )
 }
 
-/* --------------------------------------------------------------- screen */
-
-export default function ChatScreen() {
-  const router = useRouter()
-  const { session } = useAuth()
-  const { summaries, loading, error, status } = useChannels()
-
-  const open = useCallback(
-    (id: string) => router.push({ pathname: "/chat/[id]", params: { id } }),
-    [router],
-  )
-
+/**
+ * The channel list, as its own segment.
+ *
+ * `not-a-member` used to replace the whole chat tab with the invite flow.
+ * Now it only replaces this segment: DMs and the People directory don't need
+ * relay membership at all (see `PeopleSegment`), so someone browsing the
+ * community shouldn't be forced through an invite gate just because they
+ * haven't touched the channel list yet.
+ */
+function ChannelsSegment({
+  summaries,
+  loading,
+  error,
+  status,
+  onOpen,
+}: {
+  summaries: ChannelSummary[]
+  loading: boolean
+  error: string | null
+  status: ChatConnectionStatus
+  onOpen: (id: string) => void
+}) {
   const renderItem = useCallback(
     ({ item }: { item: ChannelSummary }) => (
-      <ChannelRow summary={item} onPress={() => open(item.channel.id)} />
+      <ChannelRow summary={item} onPress={() => onOpen(item.channel.id)} />
     ),
-    [open],
+    [onOpen],
   )
-
-  // Without a session there is no keypair, so there is nothing to connect with
-  // and no rooms to list. Explain that instead of rendering an empty list.
-  if (!session) return <SignInPrompt />
 
   // Closed relay, and this key isn't a member yet. Nothing will ever load
   // until an invite is redeemed, so show the way in rather than an empty list
   // or a misleading "offline".
-  if (status === "not-a-member") {
-    return (
-      <View style={{ flex: 1 }}>
-        <IdentityBar status={status} />
-        <JoinCommunity relayUrl={RELAY_URL} />
-      </View>
-    )
-  }
+  if (status === "not-a-member") return <JoinCommunity relayUrl={RELAY_URL} />
 
   // A relay error is not fatal — the rooms still exist and the socket keeps
   // retrying — so only show the error state when we have nothing to list.
-  if (error && !summaries.length) {
-    return (
-      <View style={{ flex: 1 }}>
-        <IdentityBar status={status} />
-        <ErrorState error={new Error(error)} />
-      </View>
-    )
-  }
+  if (error && !summaries.length) return <ErrorState error={new Error(error)} />
 
   if (loading && !summaries.length) return <Loading label="Opening chat…" />
 
@@ -209,7 +213,6 @@ export default function ChatScreen() {
       data={summaries}
       keyExtractor={(item) => item.channel.id}
       renderItem={renderItem}
-      ListHeaderComponent={<IdentityBar status={status} />}
       // Defensive: with a session the built-in rooms always populate this list,
       // so an empty render means something upstream failed. Never leave the
       // screen blank under the status bar.
@@ -234,5 +237,177 @@ export default function ChatScreen() {
       contentContainerStyle={{ paddingBottom: 24 }}
       keyboardShouldPersistTaps="handled"
     />
+  )
+}
+
+/* ----------------------------------------------------------- people row */
+
+// Long member lists shouldn't take seconds to finish animating in; everyone
+// past the cap arrives on the same beat as row 10 instead of queuing further.
+const STAGGER_CAP = 10
+const STAGGER_STEP = 35
+
+function PersonRow({
+  member,
+  index,
+  onPress,
+}: {
+  member: CommunityMember
+  index: number
+  onPress: () => void
+}) {
+  const p = usePalette()
+  const affiliation = [member.jobTitle, member.organization].filter(Boolean).join(" · ")
+
+  return (
+    <FadeIn delay={Math.min(index, STAGGER_CAP) * STAGGER_STEP} offset={8}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={member.fullName}
+        onPress={onPress}
+        style={({ pressed }) => ({
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 12,
+          paddingHorizontal: layout.gutter,
+          paddingVertical: 12,
+          backgroundColor: pressed ? p.surface : "transparent",
+        })}
+      >
+        <Avatar uri={member.avatarUrl} name={member.fullName} size={44} />
+        <View style={{ flex: 1, gap: 2 }}>
+          <Txt variant="heading" numberOfLines={1}>
+            {member.fullName}
+          </Txt>
+          {affiliation ? (
+            <Txt variant="body" color={p.muted} numberOfLines={1}>
+              {affiliation}
+            </Txt>
+          ) : null}
+          {member.location ? <Muted numberOfLines={1}>{member.location}</Muted> : null}
+        </View>
+        <Ionicons name="chevron-forward" size={16} color={p.border} />
+      </Pressable>
+    </FadeIn>
+  )
+}
+
+/**
+ * The member directory: everyone in the community, searchable, one tap from a
+ * DM. Deliberately independent of the relay — it reads `public.users` over
+ * PostgREST, not Nostr, so it renders the same whether the socket above is
+ * live, reconnecting, or this key hasn't joined the relay's rooms yet.
+ */
+function PeopleSegment({ onOpen }: { onOpen: (id: string) => void }) {
+  const p = usePalette()
+  const [search, setSearch] = useState("")
+  const { data, isPending, isFetching, error, refetch } = useCommunityMembers()
+
+  const members = data ?? []
+  const visible = useMemo(() => filterCommunityMembers(members, search), [members, search])
+
+  const renderItem = useCallback(
+    ({ item, index }: { item: CommunityMember; index: number }) => (
+      <PersonRow member={item} index={index} onPress={() => onOpen(item.id)} />
+    ),
+    [onOpen],
+  )
+
+  const empty = isPending ? (
+    <Loading label="Finding people…" />
+  ) : error ? (
+    <ErrorState error={error} onRetry={() => void refetch()} />
+  ) : members.length === 0 ? (
+    <EmptyState
+      icon="people-outline"
+      title="No one here yet"
+      body="Once people join the community, you'll be able to find them here and start a conversation."
+    />
+  ) : (
+    <EmptyState icon="search-outline" title="No matches" body="Try a different name, company or location." />
+  )
+
+  return (
+    <FlatList
+      data={visible}
+      keyExtractor={(item) => item.id}
+      renderItem={renderItem}
+      ListHeaderComponent={
+        members.length > 0 ? (
+          <View style={{ paddingHorizontal: layout.gutter, paddingBottom: 10 }}>
+            <Field
+              placeholder="Search name, company or location"
+              value={search}
+              onChangeText={setSearch}
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="search"
+              clearButtonMode="while-editing"
+            />
+          </View>
+        ) : null
+      }
+      ListEmptyComponent={empty}
+      ItemSeparatorComponent={Divider}
+      contentContainerStyle={{ paddingBottom: 24 }}
+      keyboardShouldPersistTaps="handled"
+      refreshControl={
+        <RefreshControl
+          refreshing={isFetching && !isPending}
+          onRefresh={() => void refetch()}
+          tintColor={p.muted}
+          colors={[p.accent]}
+        />
+      }
+    />
+  )
+}
+
+/* --------------------------------------------------------------- screen */
+
+type ChatTab = "channels" | "people"
+
+const SEGMENTS: { value: ChatTab; label: string }[] = [
+  { value: "channels", label: "Channels" },
+  { value: "people", label: "People" },
+]
+
+export default function ChatScreen() {
+  const router = useRouter()
+  const { session } = useAuth()
+  const { summaries, loading, error, status } = useChannels()
+  const [tab, setTab] = useState<ChatTab>("channels")
+
+  const openChannel = useCallback(
+    (id: string) => router.push({ pathname: "/chat/[id]", params: { id } }),
+    [router],
+  )
+  // A person's `users.id` resolves to the same route: `resolveChannel` in
+  // src/chat/nostr.ts falls through to the users table when the id isn't a
+  // known channel or an event_users row, and turns it into a DM.
+  const openPerson = openChannel
+
+  // Without a session there is no keypair, so there is nothing to connect with
+  // and no rooms to list. Explain that instead of rendering an empty list.
+  if (!session) return <SignInPrompt />
+
+  return (
+    <View style={{ flex: 1 }}>
+      <IdentityBar status={status} />
+      <View style={{ paddingBottom: 10 }}>
+        <SegmentedControl options={SEGMENTS} value={tab} onChange={setTab} />
+      </View>
+      {tab === "people" ? (
+        <PeopleSegment onOpen={openPerson} />
+      ) : (
+        <ChannelsSegment
+          summaries={summaries}
+          loading={loading}
+          error={error}
+          status={status}
+          onOpen={openChannel}
+        />
+      )}
+    </View>
   )
 }

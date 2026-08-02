@@ -57,17 +57,6 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="connections"
-        options={{
-          title: "Connections",
-          // "Connections" truncates in the tab bar; the screen header keeps the
-          // full word.
-          tabBarLabel: "People",
-          href: href(isEnabled("connections")),
-          tabBarIcon: ({ color, size }) => <Ionicons name="people" size={size} color={color} />,
-        }}
-      />
-      <Tabs.Screen
         name="chat"
         options={{
           title: "Chat",
@@ -85,6 +74,21 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="person-circle" size={size} color={color} />
           ),
+        }}
+      />
+      {/* Superseded by the People segment inside Chat, which shows the same
+          directory without the `event_attendance` dependency — see
+          src/api/connections.ts. Kept mounted so the flag can bring it back
+          without a rebuild of anything else; `href: null` just hides the tab. */}
+      <Tabs.Screen
+        name="connections"
+        options={{
+          title: "Connections",
+          // "Connections" truncates in the tab bar; the screen header keeps the
+          // full word.
+          tabBarLabel: "People",
+          href: href(isEnabled("connections")),
+          tabBarIcon: ({ color, size }) => <Ionicons name="people" size={size} color={color} />,
         }}
       />
     </Tabs>
