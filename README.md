@@ -121,7 +121,15 @@ src/
 > GOTRUE_URI_ALLOW_LIST: ${GOTRUE_URI_ALLOW_LIST:-https://aisocratic.org/**,http://localhost:**,aisocratic://**}
 > ```
 >
-> **The `auth` container must be recreated for this to take effect.** Per `website/DEPLOY.md` the stack is Docker Compose on Hetzner at `/opt/aisocratic`:
+> **✅ Applied to production on 2026-08-02.** The live value is now:
+>
+> ```
+> GOTRUE_URI_ALLOW_LIST=https://aisocratic.org/**,https://meet.aisocratic.org/**,http://localhost:**,aisocratic://**
+> ```
+>
+> The compose default was **not** what governed this. Production sets the variable explicitly at **`/opt/aisocratic/.env:50`**, which overrides `${VAR:-default}` — so that file is the one to edit, and the compose change alone would have been a no-op. A timestamped backup (`.env.bak-*-pre-mobile-oauth`) sits next to it, and the `auth` container was recreated. `exp://**` was deliberately left off; the development build removes the need for it.
+>
+> Should this ever need redoing, per `website/DEPLOY.md` the stack is Docker Compose on Hetzner at `/opt/aisocratic`:
 >
 > ```bash
 > # 1. get the compose change onto the server
@@ -148,6 +156,8 @@ src/
 > 2. **Temporarily add `exp://**`** to the server list. Already set in `.env.docker` for local stacks. Don't leave it on the public server: it lets any Expo dev server receive a completed OAuth redirect. PKCE with S256 limits the damage — an intercepted code is useless without the on-device verifier — but an attacker can request the implicit flow instead, so it is still worth removing before launch.
 >
 > **Email sign-in needs none of this** — `verifyOtp` is a plain HTTP call with no browser and no redirect, so it works in Expo Go, in dev builds, and in production **as-is, today**. Verified against the live server: a wrong code returns `403 otp_expired "Token has expired or is invalid"`, i.e. the endpoint is reachable and doing real verification.
+
+`app/auth/callback.tsx` is a safety net, not the happy path. `WebBrowser.openAuthSessionAsync` intercepts the redirect inside the auth sheet and hands the URL straight back to `signInWithGoogle`, so no navigation normally occurs. But the OS can deliver `aisocratic://auth/callback` out of band — sheet dismissed early, a magic link opened from a mail client, a cold start — and without that route those landed on expo-router's "Unmatched Route" screen. Verified with `xcrun simctl openurl booted "aisocratic://auth/callback?probe=1"` against the dev build: it now redeems any credentials in the link and redirects into the app.
 
 **PKCE needs a WebCrypto shim on Hermes.** `@supabase/auth-js` feature-detects `crypto.subtle` when building the code challenge; Hermes has no WebCrypto, so it logs *"WebCrypto API is not supported. Code challenge method will default to use plain instead of sha256"* and falls back to `plain` — which sends the verifier itself as the challenge and discards most of PKCE's value. `src/lib/webcrypto.ts` supplies the one primitive it needs (SHA-256 `digest`, on `@noble/hashes`, already a dependency) and is imported before the client is constructed. The warning is gone and the challenge is S256. It's unit-tested against known vectors, including that it hashes only a view's slice rather than its whole backing buffer.
 
