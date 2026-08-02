@@ -187,7 +187,9 @@ function Hero({ item, onPress }: { item: FeedItem; onPress: () => void }) {
             </Txt>
           ) : null}
           <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 2 }}>
-            <Avatar name={item.authors?.[0] ?? null} size={28} />
+            {/* Most news rows are unbylined — an initials bubble reading "?"
+                is worse than no bubble. */}
+            {item.authors?.[0] ? <Avatar name={item.authors[0]} size={28} /> : null}
             <View style={{ flex: 1 }}>
               <MetaLine item={item} />
             </View>
