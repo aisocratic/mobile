@@ -106,6 +106,30 @@ src/
 
 ## Features
 
+Which sections exist in a build is a flag, not a branch — see `src/features.ts`.
+
+| Section | First release | Notes |
+| --- | --- | --- |
+| Feed | ✅ | Landing tab |
+| Events | ✅ | |
+| Connections ("People") | ✅ | ⚠️ Returns an empty list for non-admin accounts — see limitation 4 |
+| Profile | ✅ | Holds sign-out; on by default so nobody is stranded signed in |
+| Chat | ❌ | Built and tested; needs the `chat_identities` migration applied and `BUZZ_OWNER_KEY` set |
+
+Flip one with `EXPO_PUBLIC_FEATURES`, whose entries are **deltas** against those defaults so adding a feature later doesn't mean editing every deployment:
+
+```bash
+EXPO_PUBLIC_FEATURES=chat            # turn chat back on
+EXPO_PUBLIC_FEATURES=-connections    # hide the People tab
+EXPO_PUBLIC_FEATURES=chat,-profile   # both, left to right
+```
+
+A disabled section loses its **tab and its routes**. `href: null` takes it out of the tab bar; the guard in `app/_layout.tsx` catches everything that doesn't come through the bar — deep links, `aisocratic://invite/<code>`, the Message button on a member profile — and redirects to `homeRoute()`, which follows the flags rather than naming a tab. Switching off the landing tab moves the landing tab; it can't strand the app on a screen the build doesn't ship.
+
+Chat is **off, not deleted**: no `getNostrAdapter` call means no relay socket is ever opened. It's one word in `.env` from coming back.
+
+One deliberate constraint: `process.env.EXPO_PUBLIC_*` is *inlined by Metro at build time* by matching literal text, so `process.env["EXPO_PUBLIC_FEATURE_" + name]` reads `undefined` forever and every flag silently takes its default. Hence one statically-named variable parsed at runtime, rather than one variable per flag.
+
 ### Authentication
 `aisocratic.org` has **no passwords**. GoTrue is configured for passwordless 6-digit email OTP plus Google OAuth, and this app uses exactly the same two flows as the website's `/login`:
 
@@ -204,6 +228,9 @@ Two things the live data forced:
 > ⚠️ **This feature is only fully populated for `admin`/`editor` accounts.** See limitation 4 below — it's an RLS constraint, not an app bug.
 
 ### Chat
+
+> **Off in the first release** (`src/features.ts`). Everything below is built and tested; it needs the `chat_identities` migration applied and `BUZZ_OWNER_KEY` set on the server. Re-enable with `EXPO_PUBLIC_FEATURES=chat`.
+
 Chat doesn't exist on the website. The brief said to use **buzz.xyz** — so first, what buzz.xyz actually is:
 
 > **buzz.xyz is Block, Inc.'s open-source Slack/GitHub alternative**, launched 21 July 2026 and built on the **Nostr** protocol ([github.com/block/buzz](https://github.com/block/buzz), Apache-2.0).
@@ -229,6 +256,24 @@ The adapter reads the relay's NIP-11 document at connect time and picks its dial
 
 Setting `EXPO_PUBLIC_NOSTR_RELAY` back to a public relay switches the whole dialect with no code change; that path is kept working deliberately, since it's the one provable end to end without an invite.
 
+#### Your chat account
+
+A Nostr account *is* a keypair — nothing issues it and nothing confirms it. The app generates 32 random bytes on the device (`src/chat/account.ts`), keeps the secret in the iOS Keychain / Android Keystore, and publishes the public half to `public.chat_identities` (`src/chat/directory.ts`) so other members can address it.
+
+That directory is what makes random keys possible at all. Nostr addresses people by public key, so before it existed the only way two devices could agree on a member's key with no server involved was to **derive** it from their auth uuid — which meant anyone who read this repo could compute anyone's secret key. Now:
+
+| | before | now |
+| --- | --- | --- |
+| Key | `sha256("aisocratic:nostr:v1:" + uuid)` | 32 random bytes, `expo-crypto` |
+| Secret lives | recomputable from the bundle | Keychain / Keystore only |
+| Addressing others | recompute their key | `chat_identities` lookup, derived key as fallback |
+
+The derivation survives in exactly two places, both about not breaking people: members with no directory row yet (anyone who used chat before this, or an event guest with no account) still resolve to their old derived key, and a device whose secure storage is unusable falls back to a *stable* derived key rather than a random one that dies on restart — the identity bar says so when that happens.
+
+**Only the public half is ever written.** `chat_identities` has no column for a secret and no code path that would send one, RLS restricts writes to `auth.uid() = user_id` (so nobody can park their key on someone else's id and receive their DMs), and `SELECT` is granted to `authenticated` only — not `anon`, unlike `public.users`, so correlating pubkeys to real names costs an account. Migration: `website/lib/db/migrations/20260801_chat_identities.sql`.
+
+The trade is that the key is **unrecoverable**. Reinstalling produces a new account rather than restoring the old one, which is exactly why the relay operator cannot read anyone's DMs. Auto-join below is what makes that cheap.
+
 #### Joining the community
 
 The community relay reports `auth_required: true` and `restricted_writes: true`, and a fresh keypair is rejected during NIP-42 with:
@@ -242,6 +287,26 @@ So membership is a precondition for *reading*, not just posting. The way in is t
 1. `GET /api/join-policy` — this community sets `age_attestation_required: true`.
 2. `POST /api/invites/accept-policy` — `{ code, policy_version, age_confirmed }`, returns a receipt. Unauthenticated (despite what `invites.rs`'s header comment implies — verified against the live server).
 3. `POST /api/invites/claim` — `{ code, policy_receipt }`, signed with **NIP-98** (kind 27235). Explicitly exempt from the membership check.
+
+#### Joining without a code
+
+Steps 1–3 need an invite code, and a code can only be minted by a key holding `owner` or `admin`. That key can never ship in the app: every `EXPO_PUBLIC_` value is plain text inside the JS bundle, and codes default to unlimited uses, so one extraction would make a private community permanently public.
+
+So the key lives on the server instead, and the app asks it for a code:
+
+```
+app  ──Authorization: Bearer <supabase JWT>──▶  POST /api/buzz/join   (website repo)
+                                                     │ holds BUZZ_OWNER_KEY
+                                                     ├─▶ POST /api/invites   NIP-98, owner key
+                                                     │      { ttl_secs: 300, max_uses: 1 }
+                                                     ◀── code
+app  ◀──{ code }──────────────────────────────────────┘
+app  ──its own key──▶  accept-policy + claim          = member, nothing typed
+```
+
+The code that reaches the device is deliberately near worthless: **single use, five-minute TTL**, spent on the next line. The route authenticates the caller against GoTrue with the *anon* key (using the service role would make it trust tokens this process minted), rate-limits per account rather than per IP, and answers `501` when `BUZZ_OWNER_KEY` is unset — at which point the app falls back to asking for a pasted code, exactly as before. Configure with `EXPO_PUBLIC_BUZZ_JOIN_URL` (a URL, not a secret).
+
+**What is not automated is the consent.** The community sets `age_attestation_required: true`, and the relay rejects `age_confirmed: false` with `join_policy_not_accepted` — so a hardcoded `true` would not be satisfying that requirement, it would be forging an answer to a question asked of a person. The checkbox stays; auto-join is one tap *after* it. `src/chat/auto-join.test.ts` asserts that an unattested auto-join refuses **without spending the invite**.
 
 #### Inviting other people
 
@@ -259,7 +324,7 @@ Three deliberate choices in `src/chat/invite-people.tsx`:
 
 Sharing goes through the native share sheet (`Share` from react-native — no new dependency, and it carries "Copy" on both platforms). The message contains the landing URL and the raw code. A recipient who opens `aisocratic://invite/<code>` lands on `app/invite/[code].tsx`, which parks the code and routes to Chat; the code is prefilled into the join form whether they already had an account or sign up first. The path mirrors the relay's own so one link addresses both clients.
 
-**The invite code is pasted by the user, never shipped.** An `EXPO_PUBLIC_BUZZ_INVITE` would be inlined into the JS bundle and trivially extractable, which would make a relay that describes itself as "private team communication" joinable by anyone who downloads the app. Codes default to unlimited uses, so that mistake would be permanent until the code was revoked. The age attestation is a real checkbox over the fetched policy text, not an auto-`true` — the server rejects `age_confirmed: false` with `join_policy_not_accepted`.
+**No invite code is ever shipped in the bundle.** An `EXPO_PUBLIC_BUZZ_INVITE` would be inlined into the JS and trivially extractable, which would make a relay that describes itself as "private team communication" joinable by anyone who downloads the app; codes default to unlimited uses, so that mistake would be permanent until revoked. A code either comes from the user (pasted, or opened as a link they chose to follow) or is minted server-side per account, single-use, with a five-minute life. The age attestation is a real checkbox over the fetched policy text on both paths, not an auto-`true` — the server rejects `age_confirmed: false` with `join_policy_not_accepted`.
 
 Three findings from building it:
 
@@ -296,7 +361,7 @@ These are real constraints of the current backend, not app bugs. They're worth a
 
 6. **Data is messier than the schema suggests.** `cover_url_thumb/medium/large` are null on all 77 events; `tags` is a jsonb array of Luma *objects*, not `string[]`; `content` is sometimes `""` rather than `NULL`. The API layer normalizes all of this — see `src/api/events.ts`.
 
-7. **Chat DMs are private from the relay operator, but not from someone with the source.** There is no writable key directory — the app can only read Supabase — so for one member to be able to address another, chat keys are *derived* from the user's auth uuid rather than generated randomly. That derivation ships in the client bundle. Closing this needs a key directory (a `nostr_pubkey` column on `users`, written at sign-in) after which keys can be random and DMs can move to NIP-17. The key is already stored per-user in SecureStore, so that migration needs no data-model change. Until then, treat DMs as unlisted, not confidential.
+7. ~~**Chat DMs are private from the relay operator, but not from someone with the source.**~~ **Fixed.** Chat keys are now random and device-held, with the public half published to `public.chat_identities` (migration in the website repo). Two caveats remain: members who have not opened the app since the change are still addressed at their old derived key until they register, and a device whose secure storage is unusable falls back to a derived key — the identity bar labels that case rather than letting it pass for a generated one.
 
 8. **Chat is single-relay.** Given how many relays gate writes, one relay is a real single point of failure. Multi-relay fan-out is the obvious next step.
 
@@ -316,9 +381,13 @@ You need one invite code from someone who already holds `owner` or `admin` on th
 
 Then, as the recipient: open the invite link, or Chat tab → paste into *Invite code* → tick the age/terms box → **Join community**. On success the socket reconnects immediately instead of waiting out the backoff.
 
+**Or skip all of that.** With `BUZZ_OWNER_KEY` set on the website and `EXPO_PUBLIC_BUZZ_JOIN_URL` pointing at `/api/buzz/join`, the Chat tab shows *Create my account & join*: tick the age/terms box, tap once, and the app generates a key, registers it, fetches a single-use invite and redeems it. Nobody handles a code.
+
 Pointing at a different Buzz community is one line and no code change — `EXPO_PUBLIC_NOSTR_RELAY=wss://<host>` — since the dialect is detected from that relay's NIP-11 document.
 
-**What is and isn't proven.** Verified live against this relay: NIP-11 capability detection, the AUTH challenge/response shape, the `restricted: not a relay member` rejection, the join-policy fetch, the age gate being server-enforced, `POST /api/invites` answering `401 missing Nostr auth` unsigned, and NIP-98 signing (a correctly signed claim reaches `403 invite_invalid`, while a corrupted signature gets `401 invalid Schnorr signature` and a mismatched body gets `401 payload tag SHA-256 mismatch` — so the 403 really does mean auth passed). NIP-44 v2 passes all 122 official vectors, NIP-17 wrapping is unit-tested including stranger-blocked and tamper-rejected cases, and the mint request's NIP-98 binding — signature, `u`, `method`, and the `payload` hash over the exact bytes sent — is asserted in `src/chat/buzz.test.ts`. **Unexercised pending real credentials:** a successful mint (needs an owner/admin key), a successful claim, NIP-42 succeeding as a member, NIP-29 group discovery, and kind-9 send/receive over the wire.
+**What is and isn't proven.** Verified live against this relay: NIP-11 capability detection, the AUTH challenge/response shape, the `restricted: not a relay member` rejection, the join-policy fetch (still `age_attestation_required: true`), the age gate being server-enforced, `POST /api/invites` answering `401 missing Nostr auth` unsigned, and NIP-98 signing (a correctly signed claim reaches `403 invite_invalid`, while a corrupted signature gets `401 invalid Schnorr signature` and a mismatched body gets `401 payload tag SHA-256 mismatch` — so the 403 really does mean auth passed). The **server-side** signer in `website/lib/buzz/invite.ts` was probed the same way and behaves identically: unsigned → `401 missing Nostr auth`, validly signed with a non-member key → `403 only relay owners and admins can create invites`, corrupted → `401 invalid Schnorr signature`, mismatched body → `401 payload tag SHA-256 mismatch`. NIP-44 v2 passes all 122 official vectors, NIP-17 wrapping is unit-tested including stranger-blocked and tamper-rejected cases, and the NIP-98 binding is asserted on both sides (`src/chat/buzz.test.ts`, `website/lib/buzz/invite.test.ts`).
+
+**Unexercised pending real credentials:** a successful mint (still needs an owner/admin key in `BUZZ_OWNER_KEY` — everything up to the role check is proven), a successful claim, `POST /api/buzz/join` end to end, NIP-42 succeeding as a member, NIP-29 group discovery, and kind-9 send/receive over the wire. The `chat_identities` migration has been written but **not applied** — nothing that writes to it has run against the live database.
 
 ---
 

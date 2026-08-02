@@ -6,6 +6,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler"
 import { SafeAreaProvider } from "react-native-safe-area-context"
 
 import { Loading } from "@/components/ui"
+import { homeRoute, isEnabled } from "@/features"
 import { queryClient } from "@/lib/query"
 import { AuthProvider, useAuth } from "@/store/auth"
 import { usePalette, useIsDark } from "@/theme"
@@ -16,6 +17,25 @@ import { usePalette, useIsDark } from "@/theme"
  * session; hitting one signed-out bounces to the welcome screen.
  */
 const GATED_ROUTES = new Set(["connections", "chat", "profile", "member"])
+
+/**
+ * Route segments that only exist when a feature is on.
+ *
+ * `href: null` removes a tab from the bar, but a deep link — `aisocratic://`,
+ * a push notification, a shared invite URL — addresses the route directly and
+ * would otherwise render a screen the build is meant not to have. This is the
+ * backstop for everything that doesn't come through the tab bar.
+ */
+const FEATURE_ROUTES: Record<string, Parameters<typeof isEnabled>[0]> = {
+  chat: "chat",
+  invite: "chat",
+  connections: "connections",
+  member: "connections",
+  feed: "feed",
+  events: "events",
+  event: "events",
+  profile: "profile",
+}
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth()
@@ -29,10 +49,19 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     // segments looks like ["(tabs)", "connections"] or ["chat", "[id]"].
     const needsSession = segments.some((s) => GATED_ROUTES.has(s))
 
-    if (!session && needsSession) {
+    const disabled = segments.some((s) => {
+      const feature = FEATURE_ROUTES[s]
+      return feature !== undefined && !isEnabled(feature)
+    })
+
+    if (disabled) {
+      // Send them somewhere real rather than leaving a half-rendered screen
+      // from a section this build doesn't ship.
+      router.replace(homeRoute())
+    } else if (!session && needsSession) {
       router.replace("/(auth)/welcome")
     } else if (session && inAuthGroup) {
-      router.replace("/(tabs)/events")
+      router.replace(homeRoute())
     }
   }, [session, loading, segments, router])
 

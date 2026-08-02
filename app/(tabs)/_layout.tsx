@@ -4,10 +4,23 @@ import React from "react"
 import { StyleSheet } from "react-native"
 
 import { InviteButton } from "@/chat/invite-button"
+import { isEnabled } from "@/features"
 import { usePalette } from "@/theme"
 
+/**
+ * Every screen file in this directory becomes a tab whether it is listed here
+ * or not, so hiding one means rendering it with `href: null` rather than
+ * omitting the `<Tabs.Screen>`. Omitting it would put the tab back with default
+ * options — the opposite of what a disabled flag should do.
+ *
+ * Declaration order is tab order. See `src/features.ts`.
+ */
 export default function TabsLayout() {
   const p = usePalette()
+  const chat = isEnabled("chat")
+
+  /** `null` removes the tab from the bar and makes the route unreachable. */
+  const href = (enabled: boolean) => (enabled ? undefined : null)
 
   return (
     <Tabs
@@ -28,26 +41,19 @@ export default function TabsLayout() {
       }}
     >
       <Tabs.Screen
-        name="events"
-        options={{
-          title: "Events",
-          tabBarIcon: ({ color, size }) => <Ionicons name="calendar" size={size} color={color} />,
-        }}
-      />
-      <Tabs.Screen
         name="feed"
         options={{
           title: "Feed",
+          href: href(isEnabled("feed")),
           tabBarIcon: ({ color, size }) => <Ionicons name="newspaper" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
-        name="chat"
+        name="events"
         options={{
-          title: "Chat",
-          tabBarIcon: ({ color, size }) => <Ionicons name="chatbubbles" size={size} color={color} />,
-          // Renders nothing on an open relay or before this key is a member.
-          headerRight: () => <InviteButton />,
+          title: "Events",
+          href: href(isEnabled("events")),
+          tabBarIcon: ({ color, size }) => <Ionicons name="calendar" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
@@ -57,14 +63,28 @@ export default function TabsLayout() {
           // "Connections" truncates in the tab bar; the screen header keeps the
           // full word.
           tabBarLabel: "People",
+          href: href(isEnabled("connections")),
           tabBarIcon: ({ color, size }) => <Ionicons name="people" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="chat"
+        options={{
+          title: "Chat",
+          href: href(chat),
+          tabBarIcon: ({ color, size }) => <Ionicons name="chatbubbles" size={size} color={color} />,
+          // Renders nothing on an open relay or before this key is a member.
+          headerRight: chat ? () => <InviteButton /> : undefined,
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: "Profile",
-          tabBarIcon: ({ color, size }) => <Ionicons name="person-circle" size={size} color={color} />,
+          href: href(isEnabled("profile")),
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="person-circle" size={size} color={color} />
+          ),
         }}
       />
     </Tabs>

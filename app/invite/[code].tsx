@@ -3,6 +3,7 @@ import React, { useEffect } from "react"
 
 import { Loading } from "@/components/ui"
 import { rememberPendingInvite } from "@/chat/pending-invite"
+import { homeRoute, isEnabled } from "@/features"
 
 /**
  * Landing route for `aisocratic://invite/<code>`.
@@ -24,6 +25,14 @@ export default function InviteLinkScreen() {
   const router = useRouter()
 
   useEffect(() => {
+    // Chat off: don't park a code there is no screen to redeem it on. Storing
+    // it would leave a join capability sitting on the device indefinitely, and
+    // it would silently activate the day chat is switched back on.
+    if (!isEnabled("chat")) {
+      router.replace(homeRoute())
+      return
+    }
+
     void rememberPendingInvite(code ?? "").finally(() => {
       router.replace("/(tabs)/chat")
     })

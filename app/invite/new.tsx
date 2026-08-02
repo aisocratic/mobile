@@ -1,8 +1,10 @@
+import { Redirect } from "expo-router"
 import React from "react"
 
 import { RELAY_URL } from "@/chat"
 import { InvitePeople } from "@/chat/invite-people"
 import { SignInPrompt } from "@/chat/sign-in-prompt"
+import { homeRoute, isEnabled } from "@/features"
 import { useAuth } from "@/store/auth"
 
 /**
@@ -14,6 +16,9 @@ import { useAuth } from "@/store/auth"
  */
 export default function NewInviteScreen() {
   const { session } = useAuth()
+
+  // There is nothing to invite anyone to while chat is off.
+  if (!isEnabled("chat")) return <Redirect href={homeRoute()} />
 
   if (!session) {
     return (

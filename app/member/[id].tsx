@@ -17,6 +17,7 @@ import {
   Screen,
   Txt,
 } from "@/components/ui"
+import { isEnabled } from "@/features"
 import { formatDay, linkedinUrl as toLinkedin } from "@/lib/format"
 import { layout, usePalette } from "@/theme"
 import type { ConnectionRole, SharedEvent } from "@/types"
@@ -224,9 +225,18 @@ export default function MemberScreen() {
           </View>
         </View>
 
-        <View style={styles.actions}>
-          <Button label="Message" icon="chatbubble-outline" onPress={openChat} style={{ flex: 1 }} />
-        </View>
+        {/* Chat is off in the first release, and a Message button that opens a
+            screen the build doesn't ship is worse than no button. */}
+        {isEnabled("chat") ? (
+          <View style={styles.actions}>
+            <Button
+              label="Message"
+              icon="chatbubble-outline"
+              onPress={openChat}
+              style={{ flex: 1 }}
+            />
+          </View>
+        ) : null}
 
         {linkedin || twitter || github ? (
           <View style={styles.socials}>
