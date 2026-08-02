@@ -91,3 +91,16 @@ export function linkedinUrl(handle: string | null | undefined): string | null {
   if (handle.startsWith("http")) return handle
   return `https://www.linkedin.com${handle.startsWith("/") ? "" : "/in/"}${handle}`
 }
+
+/**
+ * `linkedinUrl` expands handles the *schema* stores. This one takes whatever a
+ * member types into the profile editor — a full URL, a pasted `linkedin.com/…`
+ * path with no scheme, or a bare handle — and normalises it to a real URL.
+ */
+export function normalizeLinkedIn(value: string | null | undefined): string | null {
+  const input = value?.trim().replace(/\/+$/, "")
+  if (!input) return null
+  if (/^https?:\/\//i.test(input)) return input
+  if (/^(www\.)?linkedin\.com\//i.test(input)) return `https://${input.replace(/^www\./i, "")}`
+  return linkedinUrl(input.replace(/^\/+/, ""))
+}

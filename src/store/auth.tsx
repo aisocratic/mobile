@@ -27,6 +27,12 @@ export type Profile = {
   is_member: boolean | null
 }
 
+/** The fields the in-app editor writes back to `public.users`. */
+export type ProfileInput = Pick<
+  Profile,
+  "full_name" | "bio" | "organization" | "job_title" | "location" | "linkedin_url"
+>
+
 type AuthState = {
   session: Session | null
   user: User | null
@@ -40,6 +46,8 @@ type AuthState = {
   signInWithGoogle: () => Promise<void>
   signOut: () => Promise<void>
   refreshProfile: () => Promise<void>
+  /** Saves the profile edits made in-app. Throws with a message on failure. */
+  updateProfile: (patch: ProfileInput) => Promise<void>
 }
 
 const AuthContext = createContext<AuthState | null>(null)
@@ -177,6 +185,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (session?.user) await loadProfile(session.user.id)
   }, [session, loadProfile])
 
+  const updateProfile = useCallback(
+    async (patch: ProfileInput) => {
+      const current = session?.user
+      if (!current) throw new Error("Sign in again to edit your profile.")
+
+      // Auth metadata first: it is the fallback the app reads when there is no
+      // `public.users` row (see loadProfile), so the name still sticks even if
+      // the row write below is refused. `updateUser` fires USER_UPDATED, which
+      // the listener above turns into fresh session state.
+      const { error: metaError } = await supabase.auth.updateUser({
+        data: { full_name: patch.full_name ?? "" },
+      })
+
+      // upsert rather than update: signing up in the app leaves you with a
+      // GoTrue user and no profile row until the website provisions one.
+      const { data, error } = await supabase
+        .from("users")
+        .upsert({ id: current.id, email: current.email ?? null, ...patch }, { onConflict: "id" })
+        .select(PROFILE_COLUMNS)
+        .maybeSingle()
+
+      if (error) throw new Error(error.message)
+      if (metaError) throw new Error(metaError.message)
+
+      if (data) setProfile(data as Profile)
+      else await loadProfile(current.id)
+    },
+    [session, loadProfile],
+  )
+
   const value = useMemo<AuthState>(
     () => ({
       session,
@@ -188,8 +226,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signInWithGoogle,
       signOut,
       refreshProfile,
+      updateProfile,
     }),
-    [session, profile, loading, sendCode, verifyCode, signInWithGoogle, signOut, refreshProfile],
+    [
+      session,
+      profile,
+      loading,
+      sendCode,
+      verifyCode,
+      signInWithGoogle,
+      signOut,
+      refreshProfile,
+      updateProfile,
+    ],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

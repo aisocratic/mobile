@@ -1,4 +1,11 @@
-import { excerpt, isUpcoming, linkedinUrl, organizerName, timeAgo } from "./format"
+import {
+  excerpt,
+  isUpcoming,
+  linkedinUrl,
+  normalizeLinkedIn,
+  organizerName,
+  timeAgo,
+} from "./format"
 
 describe("organizerName", () => {
   // events.organizer is a JSON *string*, not jsonb — the one column shape in
@@ -51,6 +58,32 @@ describe("linkedinUrl", () => {
   it("leaves a full url alone", () => {
     const url = "https://www.linkedin.com/in/someone"
     expect(linkedinUrl(url)).toBe(url)
+  })
+})
+
+describe("normalizeLinkedIn", () => {
+  it("expands a bare handle typed into the profile editor", () => {
+    expect(normalizeLinkedIn("federicoulfo")).toBe("https://www.linkedin.com/in/federicoulfo")
+  })
+
+  it("adds the scheme to a pasted path without doubling the domain", () => {
+    expect(normalizeLinkedIn("linkedin.com/in/federicoulfo")).toBe(
+      "https://linkedin.com/in/federicoulfo",
+    )
+    expect(normalizeLinkedIn("www.linkedin.com/company/aisocratic")).toBe(
+      "https://linkedin.com/company/aisocratic",
+    )
+  })
+
+  it("keeps a full url and drops a trailing slash", () => {
+    expect(normalizeLinkedIn("https://www.linkedin.com/in/someone/")).toBe(
+      "https://www.linkedin.com/in/someone",
+    )
+  })
+
+  it("treats blank input as cleared", () => {
+    expect(normalizeLinkedIn("   ")).toBeNull()
+    expect(normalizeLinkedIn(null)).toBeNull()
   })
 })
 

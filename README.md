@@ -73,16 +73,17 @@ app/                          # expo-router — file path == route
   _layout.tsx                 # providers + AuthGate (session-based redirects)
   index.tsx                   # entry redirect
   (auth)/                     # welcome, sign-in, sign-up
-  (tabs)/                     # events, news, blog, chat, connections, profile
+  (tabs)/                     # events, feed, chat, connections, profile
   event/[id].tsx              # event detail
   news/[id].tsx               # news reader
   article/[slug].tsx          # blog reader
   member/[id].tsx             # member profile + shared events
+  profile/edit.tsx            # in-app profile editor
   chat/[id].tsx               # conversation
 
 src/
   api/                        # one module per domain: PostgREST queries + React Query hooks
-    events.ts  news.ts  blog.ts  connections.ts
+    events.ts  news.ts  blog.ts  feed.ts  connections.ts
   chat/                       # Nostr chat adapter (see below)
   components/
     ui.tsx                    # design system: Txt, Card, Button, Field, Chip, Avatar, states…
@@ -163,7 +164,7 @@ src/
 
 Sessions persist in the iOS Keychain / Android Keystore via `expo-secure-store`, chunked to stay under SecureStore's 2 KB per-item limit.
 
-`AuthGate` in the root layout decides who needs a session. Events, news and the blog are public on the website, so they stay browsable signed-out; only Connections, Chat, Profile and member pages bounce to the welcome screen. Because that bounce is a `replace()`, there is no back stack out of it — so the welcome screen carries a **"Not now — browse events"** action that returns you to the public tabs. Nobody gets trapped in the sign-in flow.
+`AuthGate` in the root layout decides who needs a session. Events and the feed are public on the website, so they stay browsable signed-out; only Connections, Chat, Profile and member pages bounce to the welcome screen. (Members-only blog posts are the one thing the feed withholds until you sign in.) Because that bounce is a `replace()`, there is no back stack out of it — so the welcome screen carries a **"Not now — browse events"** action that returns you to the public tabs. Nobody gets trapped in the sign-in flow.
 
 That action is deliberately a normal in-flow button rather than a floating ✕. An absolutely positioned close icon loses iOS hit-testing to a later non-positioned sibling even with a higher `zIndex`: it renders perfectly and silently ignores every tap. Worth remembering before adding a floating control to any screen here.
 
@@ -172,11 +173,15 @@ That action is deliberately a normal in-flow button rather than a floating ✕. 
 
 Times are rendered in the **event's** timezone (rows carry an IANA `timezone`), not the device's.
 
-### News
-`updates` table — the website renamed this surface to "News" in July 2026 but the table kept its old name. Infinite-scroll feed with category filters and an in-app reader; link-only items open their source directly.
+### Feed
+News and the blog are two tables but one reading surface. `src/api/feed.ts` normalises both into a single `FeedItem` and merges them newest-first; the tab carries two filter rows — source (**All / News / Blog**) and topic — and the topic row is the union of both sides' categories, deduplicated case-insensitively.
 
-### Blog
-`blog_posts` table — 31 posts. Featured hero card, category filters, and a full reading view rendered through the in-house markdown renderer.
+- `updates` table — the website renamed this surface to "News" in July 2026 but the table kept its old name. Paged 20 at a time, category filtered server-side; link-only items open their source directly instead of an empty reader.
+- `blog_posts` table — 31 posts, fetched whole and filtered client-side, read through the in-house markdown renderer.
+
+The two paginate differently, which the merge has to absorb: the blog arrives in one request while news is paged, so a blog post older than the last loaded news item is held back until news catches up with it. Without that cutoff every new page of news would insert rows *above* posts the reader had already scrolled past.
+
+Selecting **News** or **Blog** disables the other query rather than filtering its results, so a single-source view costs a single request. The top item renders as a hero card; the rest as rows tagged with their source.
 
 ### Connections
 The list of people you've met at AI Socratic events, with the role each of you had — **host** or **guest**.
@@ -256,7 +261,7 @@ These are real constraints of the current backend, not app bugs. They're worth a
 
 1. **The Next.js API can't authenticate a mobile client.** Every authenticated route in `website/app/(main)/api/**` resolves identity through `@supabase/ssr` cookies via `next/headers`. There is no `Authorization: Bearer` fallback, so a native client cannot call them. This app therefore reads PostgREST directly. A ~20-line change in `website/lib/db/auth-server.ts` — use `global: { headers: { Authorization } }` when a Bearer header is present — would unblock all ~280 routes at once.
 
-2. **Profile provisioning is web-only.** The `public.users` row is created by `POST /api/auth/complete`, which is cookie-authenticated. A user who signs up *in the app* gets a valid GoTrue session but may have no `public.users` row. The app degrades gracefully — it falls back to auth metadata and prompts the user to finish their profile on the web — but the provisioning step should move somewhere a native client can reach (a Postgres trigger, or the Bearer fix above).
+2. **Profile provisioning is web-only.** The `public.users` row is created by `POST /api/auth/complete`, which is cookie-authenticated. A user who signs up *in the app* gets a valid GoTrue session but may have no `public.users` row. The app edits profiles natively (`app/profile/edit.tsx` → `updateProfile` in `src/store/auth.tsx`), writing straight to PostgREST with an **upsert** so the first save also provisions the row. That needs an RLS insert/update policy for `auth.uid() = id` on `public.users`; where the policy is missing the write is refused and the screen surfaces the error. The editor always writes `full_name` into auth metadata too, so the display name survives a refused row write — but bio, role, organization and location live only in the row. Provisioning still belongs somewhere a native client can reach (a Postgres trigger, or the Bearer fix above).
 
 3. **`public.updates` has RLS disabled**, so the anon key can read unpublished drafts. The app applies the same `moderation_status = 'approved' AND is_published AND status != 'archived'` filter the website uses, but that's politeness, not enforcement. Similarly `members` is world-readable *including `email`* — the `public_profile` gate lives in application code, not in a policy.
 

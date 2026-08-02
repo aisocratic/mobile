@@ -64,6 +64,7 @@ function RootNavigator() {
       <Stack.Screen name="article/[slug]" options={{ title: "" }} />
       <Stack.Screen name="news/[id]" options={{ title: "" }} />
       <Stack.Screen name="member/[id]" options={{ title: "Member" }} />
+      <Stack.Screen name="profile/edit" options={{ title: "Edit profile" }} />
       <Stack.Screen
         name="chat/[id]"
         options={{ title: "Chat", headerBackButtonDisplayMode: "minimal" }}

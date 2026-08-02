@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons"
+import { useRouter } from "expo-router"
 import * as WebBrowser from "expo-web-browser"
 import React, { useCallback, useState } from "react"
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, View } from "react-native"
@@ -45,6 +46,7 @@ function Row({
 
 export default function ProfileTab() {
   const p = usePalette()
+  const router = useRouter()
   const { user, profile, signOut } = useAuth()
   const [signingOut, setSigningOut] = useState(false)
 
@@ -74,6 +76,8 @@ export default function ProfileTab() {
   const open = useCallback((url: string) => {
     void WebBrowser.openBrowserAsync(url)
   }, [])
+
+  const editProfile = useCallback(() => router.push("/profile/edit"), [router])
 
   return (
     <Screen>
@@ -126,40 +130,26 @@ export default function ProfileTab() {
 
         {!profile ? (
           <Card style={{ gap: 10 }}>
-            <Txt variant="heading">Finish your profile on the web</Txt>
+            <Txt variant="heading">Finish your profile</Txt>
             <Txt variant="body" color={p.muted} style={{ lineHeight: 21 }}>
-              We couldn't find a community profile linked to this account yet. Complete it on
-              aisocratic.org and it'll show up here.
+              We couldn't find a community profile linked to this account yet. Add your details and
+              other members will see them across AI Socratic.
             </Txt>
             <Button
-              label="Open my profile"
+              label="Complete my profile"
               variant="secondary"
-              icon="open-outline"
-              onPress={() => open(`${SITE_URL}/profile`)}
+              icon="create-outline"
+              onPress={editProfile}
             />
           </Card>
         ) : null}
 
         <Card style={{ paddingVertical: 4 }}>
-          <Row
-            icon="person-circle-outline"
-            label="Edit profile"
-            onPress={() => open(`${SITE_URL}/profile`)}
-          />
-          <Row
-            icon="globe-outline"
-            label="Open aisocratic.org"
-            onPress={() => open(SITE_URL)}
-          />
+          <Row icon="person-circle-outline" label="Edit profile" onPress={editProfile} />
           <Row
             icon="mail-outline"
             label="Contact the team"
             onPress={() => open(`${SITE_URL}/contact`)}
-          />
-          <Row
-            icon="shield-checkmark-outline"
-            label="Community guidelines"
-            onPress={() => open(`${SITE_URL}/about/guidelines`)}
           />
           <Row
             icon="document-text-outline"
