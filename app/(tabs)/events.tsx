@@ -7,6 +7,8 @@ import { Pressable, RefreshControl, SectionList, StyleSheet, View } from "react-
 
 import { eventCover, eventPlace, useEvents, type EventFilter } from "@/api/events"
 import { EmptyState, ErrorState, Loading, Screen, SegmentedControl, Txt } from "@/components/ui"
+import { EventsMasthead } from "@/components/events-masthead"
+import { FadeIn } from "@/components/fade-in"
 import { formatEventTime, parseDate } from "@/lib/format"
 import { layout, usePalette, type Palette } from "@/theme"
 import type { EventRow } from "@/types"
@@ -17,6 +19,11 @@ const FILTERS: { value: EventFilter; label: string }[] = [
 ]
 
 const COVER_SIZE = 84
+
+/** Rows past this index render without delay — a long list scrolling in
+ * staggered would feel laggy rather than composed. */
+const STAGGER_CAP = 8
+const STAGGER_STEP_MS = 55
 
 type Section = { title: string; data: EventRow[] }
 
@@ -180,6 +187,18 @@ export default function EventsScreen() {
   const { data, error, isPending, isFetching, refetch } = useEvents(filter)
   const sections = useMemo(() => groupByMonth(data ?? []), [data])
 
+  // Delay by an event's position in the whole (unsectioned) list, so the
+  // stagger reads top-to-bottom across month boundaries rather than
+  // restarting at zero in each section.
+  const staggerDelay = useMemo(() => {
+    const delays = new Map<string, number>()
+    for (const [i, event] of (data ?? []).entries()) {
+      if (i >= STAGGER_CAP) break
+      delays.set(event.id, i * STAGGER_STEP_MS)
+    }
+    return delays
+  }, [data])
+
   const open = useCallback(
     (id: string) => router.push({ pathname: "/event/[id]", params: { id } }),
     [router],
@@ -207,8 +226,11 @@ export default function EventsScreen() {
         stickySectionHeadersEnabled
         contentContainerStyle={{ paddingBottom: 40 }}
         ListHeaderComponent={
-          <View style={styles.header}>
-            <SegmentedControl options={FILTERS} value={filter} onChange={setFilter} />
+          <View>
+            <EventsMasthead />
+            <View style={styles.header}>
+              <SegmentedControl options={FILTERS} value={filter} onChange={setFilter} />
+            </View>
           </View>
         }
         renderSectionHeader={({ section }) => (
@@ -222,7 +244,11 @@ export default function EventsScreen() {
             </Txt>
           </View>
         )}
-        renderItem={({ item }) => <EventCard event={item} onPress={open} />}
+        renderItem={({ item }) => {
+          const delay = staggerDelay.get(item.id)
+          const card = <EventCard event={item} onPress={open} />
+          return delay === undefined ? card : <FadeIn delay={delay}>{card}</FadeIn>
+        }}
         ListEmptyComponent={empty}
         refreshControl={
           <RefreshControl

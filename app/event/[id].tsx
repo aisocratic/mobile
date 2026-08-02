@@ -7,6 +7,7 @@ import React, { useCallback, useMemo } from "react"
 import { Pressable, ScrollView, Share, StyleSheet, View } from "react-native"
 
 import { eventCover, eventLink, eventPlace, useEvent } from "@/api/events"
+import { FadeIn } from "@/components/fade-in"
 import { Markdown } from "@/components/markdown"
 import { Avatar, Chip, Divider, ErrorState, Loading, Screen, Txt } from "@/components/ui"
 import { excerpt, linkedinUrl, organizerName, parseDate } from "@/lib/format"
@@ -235,50 +236,56 @@ export default function EventDetailScreen() {
       <Stack.Screen options={{ title: "", headerRight }} />
 
       <ScrollView contentContainerStyle={{ paddingBottom: 48 }} showsVerticalScrollIndicator={false}>
-        <Hero event={event} p={p} />
+        <FadeIn offset={0}>
+          <Hero event={event} p={p} />
+        </FadeIn>
 
         <View style={styles.body}>
-          <Txt variant="display" style={{ lineHeight: 36 }}>
-            {title}
-          </Txt>
-
-          {organizer ? (
-            <Txt variant="caption" color={p.muted} style={{ marginTop: 6 }}>
-              Hosted by {organizer}
+          <FadeIn delay={80}>
+            <Txt variant="display" style={{ lineHeight: 36 }}>
+              {title}
             </Txt>
-          ) : null}
 
-          {event.tags?.length ? (
-            <View style={styles.tags}>
-              {event.tags.map((tag) => (
-                <Chip key={tag} label={tag} tone="accent" />
-              ))}
-            </View>
-          ) : null}
-
-          <View style={styles.metaBlock}>
-            <MetaRow
-              icon="calendar-outline"
-              label={when?.time ? "When" : "Date"}
-              value={when?.time ? `${when.date}\n${when.time}` : (when?.date ?? "Date TBA")}
-              p={p}
-            />
-
-            {event.is_virtual ? (
-              <MetaRow icon="videocam-outline" label="Where" value="Virtual event" p={p} />
-            ) : place ? (
-              <MetaRow icon="location-outline" label="Where" value={place} p={p} />
+            {organizer ? (
+              <Txt variant="caption" color={p.muted} style={{ marginTop: 6 }}>
+                Hosted by {organizer}
+              </Txt>
             ) : null}
 
-            {guests ? (
+            {event.tags?.length ? (
+              <View style={styles.tags}>
+                {event.tags.map((tag) => (
+                  <Chip key={tag} label={tag} tone="accent" />
+                ))}
+              </View>
+            ) : null}
+          </FadeIn>
+
+          <FadeIn delay={160}>
+            <View style={styles.metaBlock}>
               <MetaRow
-                icon="people-outline"
-                label="Attendance"
-                value={`${guests} ${guests === 1 ? "guest" : "guests"}`}
+                icon="calendar-outline"
+                label={when?.time ? "When" : "Date"}
+                value={when?.time ? `${when.date}\n${when.time}` : (when?.date ?? "Date TBA")}
                 p={p}
               />
-            ) : null}
-          </View>
+
+              {event.is_virtual ? (
+                <MetaRow icon="videocam-outline" label="Where" value="Virtual event" p={p} />
+              ) : place ? (
+                <MetaRow icon="location-outline" label="Where" value={place} p={p} />
+              ) : null}
+
+              {guests ? (
+                <MetaRow
+                  icon="people-outline"
+                  label="Attendance"
+                  value={`${guests} ${guests === 1 ? "guest" : "guests"}`}
+                  p={p}
+                />
+              ) : null}
+            </View>
+          </FadeIn>
 
           {link ? (
             <View style={styles.actions}>
@@ -323,13 +330,15 @@ export default function EventDetailScreen() {
           ) : null}
 
           {body ? (
-            <View style={styles.section}>
-              <Divider />
-              <Txt variant="title" style={{ marginTop: 22, marginBottom: 4 }}>
-                About
-              </Txt>
-              <Markdown content={body} />
-            </View>
+            <FadeIn delay={240}>
+              <View style={styles.section}>
+                <Divider />
+                <Txt variant="title" style={{ marginTop: 22, marginBottom: 4 }}>
+                  About
+                </Txt>
+                <Markdown content={body} />
+              </View>
+            </FadeIn>
           ) : null}
         </View>
       </ScrollView>
