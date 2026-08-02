@@ -7,7 +7,9 @@
     "scheme": "aisocratic",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "org.aisocratic.mobile"
@@ -30,7 +32,8 @@
           "resizeMode": "contain",
           "imageWidth": 160
         }
-      ]
+      ],
+      "expo-video"
     ],
     "experiments": {
       "typedRoutes": true

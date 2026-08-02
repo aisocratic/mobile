@@ -108,6 +108,8 @@ export type Feed = {
   error: unknown
   isRefetching: boolean
   isFetchingMore: boolean
+  /** More pages exist. False means this really is the bottom of the feed. */
+  hasMore: boolean
   refetch: () => void
   loadMore: () => void
 }
@@ -189,6 +191,9 @@ export function useFeed(
     isRefetching:
       (wantsNews && news.isRefetching && !news.isFetchingNextPage) || (wantsBlog && blog.isRefetching),
     isFetchingMore: wantsNews && news.isFetchingNextPage,
+    // Only news paginates; the blog's rows all arrive in one request, so a
+    // blog-only feed is complete the moment it has loaded.
+    hasMore: wantsNews && !!news.hasNextPage,
     refetch,
     loadMore,
   }

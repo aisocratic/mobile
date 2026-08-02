@@ -8,6 +8,8 @@ import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Vie
 
 import { authorLine, readingTime } from "@/api/blog"
 import { ALL, useFeed, type FeedItem, type SourceFilter } from "@/api/feed"
+import { CommunityCta } from "@/components/community-cta"
+import { FeedMasthead } from "@/components/feed-masthead"
 import {
   Avatar,
   Divider,
@@ -378,30 +380,31 @@ export default function FeedScreen() {
           />
         }
         ListHeaderComponent={
-          featured ? (
-            <View style={{ gap: 20, paddingTop: 16, paddingBottom: rest.length ? 4 : 0 }}>
-              <Hero item={featured} onPress={() => open(featured)} />
-              {rest.length ? (
-                <View
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    paddingHorizontal: layout.gutter,
-                  }}
+          // The masthead renders whether or not there is a featured story —
+          // an empty feed should still look like the app, not like a blank.
+          <View style={{ gap: 20, paddingBottom: rest.length ? 4 : 0 }}>
+            <FeedMasthead />
+            {featured ? <Hero item={featured} onPress={() => open(featured)} /> : null}
+            {rest.length ? (
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  paddingHorizontal: layout.gutter,
+                }}
+              >
+                <Txt
+                  variant="label"
+                  color={p.muted}
+                  style={{ textTransform: "uppercase", letterSpacing: 1 }}
                 >
-                  <Txt
-                    variant="label"
-                    color={p.muted}
-                    style={{ textTransform: "uppercase", letterSpacing: 1 }}
-                  >
-                    More stories
-                  </Txt>
-                  <Muted>{rest.length}</Muted>
-                </View>
-              ) : null}
-            </View>
-          ) : null
+                  More stories
+                </Txt>
+                <Muted>{rest.length}</Muted>
+              </View>
+            ) : null}
+          </View>
         }
         ListEmptyComponent={
           featured ? null : (
@@ -421,8 +424,13 @@ export default function FeedScreen() {
             <View style={{ paddingVertical: 24 }}>
               <ActivityIndicator color={p.accent} />
             </View>
-          ) : (
+          ) : feed.hasMore ? (
             <View style={{ height: 24 }} />
+          ) : (
+            // Only once the feed is exhausted — the same place the website puts
+            // it. Mounting it mid-scroll would start the video download while
+            // there are still stories to read.
+            <CommunityCta />
           )
         }
       />

@@ -83,11 +83,21 @@ function RootNavigator() {
         // renders the group name, e.g. "(tabs)".
         headerBackButtonDisplayMode: "minimal",
         contentStyle: { backgroundColor: p.background },
+        // The native push, but slower than the default 350ms — the content on
+        // these screens is editorial, and a slightly longer curve makes opening
+        // a story feel like turning to it rather than snapping to it. Still
+        // interruptible, and still the platform gesture, so it never fights
+        // muscle memory.
+        animation: "slide_from_right",
+        animationDuration: 420,
       }}
     >
       <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen name="auth/callback" options={{ headerShown: false }} />
-      <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+      {/* The welcome screen opens on a full-bleed video, and sliding that in
+          from the edge shows a hard rectangle of moving footage crossing the
+          screen. A fade lets the first frame resolve in place instead. */}
+      <Stack.Screen name="(auth)" options={{ headerShown: false, animation: "fade" }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="event/[id]" options={{ title: "Event" }} />
       <Stack.Screen name="article/[slug]" options={{ title: "" }} />
