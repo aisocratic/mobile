@@ -11,7 +11,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { useAuth } from "@/store/auth"
 
 import { BUZZ_RELAY_URL, getNostrAdapter, PUBLIC_RELAY_URL, RELAY_URL } from "./nostr"
-import { policyDocumentUrls } from "./buzz"
+import { INVITE_LIMITS, policyDocumentUrls } from "./buzz"
+import { takePendingInvite } from "./pending-invite"
 import { shortNpub } from "./protocol"
 import {
   clearStore,
@@ -36,15 +37,26 @@ import type {
   ChatChannel,
   ChatConnectionStatus,
   ChatIdentity,
+  ChatInvite,
+  ChatInviteOptions,
   ChatMessage,
   ChatProfile,
   RelayCapabilities,
 } from "./types"
 
-export { BUZZ_RELAY_URL, policyDocumentUrls, PUBLIC_RELAY_URL, RELAY_URL, shortNpub }
+export {
+  BUZZ_RELAY_URL,
+  INVITE_LIMITS,
+  policyDocumentUrls,
+  PUBLIC_RELAY_URL,
+  RELAY_URL,
+  shortNpub,
+}
 export type {
   ChatChannel,
   ChatConnectionStatus,
+  ChatInvite,
+  ChatInviteOptions,
   ChatMessage,
   ChatProfile,
   RelayCapabilities,
@@ -379,6 +391,77 @@ export function useJoinCommunity(): {
   }, [])
 
   return { join, joining, error, joined, reset }
+}
+
+/**
+ * A code that arrived by link, consumed once so a join form can prefill it.
+ *
+ * Returns `undefined` while the lookup is in flight and `null` once it's known
+ * there is nothing parked — the difference matters to a field that would
+ * otherwise render empty and then jump.
+ */
+export function usePendingInvite(): string | null | undefined {
+  const [code, setCode] = useState<string | null | undefined>(undefined)
+
+  useEffect(() => {
+    let active = true
+    void takePendingInvite().then((next) => {
+      if (active) setCode(next)
+    })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  return code
+}
+
+/**
+ * Mint an invite for someone else.
+ *
+ * Kept deliberately un-persisted: the relay returns the code once and has no
+ * endpoint to read it back, so this holds it in component state for as long as
+ * the screen is open and no longer. Writing it to storage would leave a
+ * standing join capability on the device for the sake of a convenience nobody
+ * asked for.
+ */
+export function useCreateInvite(): {
+  create: (options: ChatInviteOptions) => Promise<ChatInvite | null>
+  invite: ChatInvite | null
+  creating: boolean
+  error: string | null
+  reset: () => void
+} {
+  const adapter = useChatAdapter()
+  const [invite, setInvite] = useState<ChatInvite | null>(null)
+  const [creating, setCreating] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const create = useCallback(
+    async (options: ChatInviteOptions) => {
+      if (!adapter) return null
+      setCreating(true)
+      setError(null)
+      try {
+        const next = await adapter.createInvite(options)
+        setInvite(next)
+        return next
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : "Could not create an invite.")
+        return null
+      } finally {
+        setCreating(false)
+      }
+    },
+    [adapter],
+  )
+
+  const reset = useCallback(() => {
+    setInvite(null)
+    setError(null)
+  }, [])
+
+  return { create, invite, creating, error, reset }
 }
 
 /** Resolve a `/chat/[id]` route param into a channel. */

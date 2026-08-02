@@ -32,7 +32,7 @@ import * as SecureStore from "expo-secure-store"
 
 import { supabase } from "@/lib/supabase"
 
-import { joinCommunity } from "./buzz"
+import { joinCommunity, mintInvite } from "./buzz"
 import { buildRumor, rumorPeer, unwrapGift, wrapForBoth } from "./nip17"
 import {
   bytesToHex,
@@ -64,6 +64,8 @@ import type {
   ChatChannel,
   ChatConnectionStatus,
   ChatIdentity,
+  ChatInvite,
+  ChatInviteOptions,
   ChatJoinResult,
   ChatMessage,
   ChatProfile,
@@ -380,6 +382,19 @@ class NostrChatAdapter implements ChatAdapter {
     // rather than leaving the user on "not a member" until the backoff expires.
     this.relay.reconnectNow()
     return { status: result.status }
+  }
+
+  async createInvite(options: ChatInviteOptions): Promise<ChatInvite> {
+    // A public relay has no invite API; minting against it would 404 with an
+    // HTML body. Say what's actually true instead.
+    const caps = await this.capabilities()
+    if (!caps.supportsInvites) {
+      const host = this.relayUrl.replace(/^wss?:\/\//, "")
+      throw new Error(
+        `${host} is an open relay — anyone can join it, so there is nothing to invite them to.`,
+      )
+    }
+    return mintInvite(this.relayUrl, await this.secretKey(), options)
   }
 
   /* ---------------------------------------------------------- channels */

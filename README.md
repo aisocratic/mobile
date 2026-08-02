@@ -243,7 +243,21 @@ So membership is a precondition for *reading*, not just posting. The way in is t
 2. `POST /api/invites/accept-policy` — `{ code, policy_version, age_confirmed }`, returns a receipt. Unauthenticated (despite what `invites.rs`'s header comment implies — verified against the live server).
 3. `POST /api/invites/claim` — `{ code, policy_receipt }`, signed with **NIP-98** (kind 27235). Explicitly exempt from the membership check.
 
-Minting (`POST /api/invites`, owner-only) is deliberately **not** implemented — that key lives with the community owner.
+#### Inviting other people
+
+The other half of the loop, added in the same shape:
+
+4. `POST /api/invites` — `{ ttl_secs, max_uses }`, signed with **NIP-98** by whoever is signed in. Returns `{ code, expires_at, max_uses, uses_remaining, url }`, where `url` is a relay-hosted landing page at `https://<host>/invite/<code>`.
+
+Authorization is the relay's job, not the app's: `mint_invite` looks the signing key up in the community and refuses anything that isn't `owner` or `admin` with `403 only relay owners and admins can create invites` (it mirrors the kind:9030 authz). So **Chat → the person-add button** is offered to every member, and a member who isn't an admin gets that sentence back instead of a button that mysteriously isn't there. The app can't read its own role — there is no endpoint for it — and guessing would be wrong in both directions.
+
+Three deliberate choices in `src/chat/invite-people.tsx`:
+
+- **Unlimited uses is never a default.** Omitting `max_uses` is how Buzz spells "unlimited", so the careless implementation gets it by accident. Here it is one of four labelled options and the default is a single use.
+- **The code is never persisted.** The relay returns it once and has no endpoint that reads it back, so it lives in component state until the screen closes. Writing it to storage would leave a standing join capability on the device to save one navigation.
+- **Bounds are checked before signing.** `MIN/MAX_INVITE_TTL_SECS` (60 s … 30 d) and `MAX_INVITE_USES` (10 000) are mirrored from `buzz_core::invite`, because every NIP-98 event sent is one the relay's replay guard has to remember — spending one on a request the server will certainly reject is waste.
+
+Sharing goes through the native share sheet (`Share` from react-native — no new dependency, and it carries "Copy" on both platforms). The message contains the landing URL and the raw code. A recipient who opens `aisocratic://invite/<code>` lands on `app/invite/[code].tsx`, which parks the code and routes to Chat; the code is prefilled into the join form whether they already had an account or sign up first. The path mirrors the relay's own so one link addresses both clients.
 
 **The invite code is pasted by the user, never shipped.** An `EXPO_PUBLIC_BUZZ_INVITE` would be inlined into the JS bundle and trivially extractable, which would make a relay that describes itself as "private team communication" joinable by anyone who downloads the app. Codes default to unlimited uses, so that mistake would be permanent until the code was revoked. The age attestation is a real checkbox over the fetched policy text, not an auto-`true` — the server rejects `age_confirmed: false` with `join_policy_not_accepted`.
 
@@ -288,19 +302,23 @@ These are real constraints of the current backend, not app bugs. They're worth a
 
 ### Getting into the community chat
 
-The only step the app can't perform for you: **minting an invite**, which requires the community owner's key.
+You need one invite code from someone who already holds `owner` or `admin` on the relay. Two ways to get it:
 
-```bash
-# From the Buzz app or CLI that holds the owner key, NIP-98 signed:
-POST https://aisocratic.communities.buzz.xyz/api/invites
-{ "ttl_secs": 604800, "max_uses": 10 }
-```
+- **From inside this app**, if that person is an app user: Chat tab → person-add button → pick an expiry and a use limit → **Create invite** → share.
+- **From the Buzz app or CLI** that holds the key, NIP-98 signed:
 
-`ttl_secs` defaults to 72h; **omitting `max_uses` means unlimited uses**, so set it deliberately. Then in the app: Chat tab → paste into *Invite code* → tick the age/terms box → **Join community**. On success the socket reconnects immediately instead of waiting out the backoff.
+  ```bash
+  POST https://aisocratic.communities.buzz.xyz/api/invites
+  { "ttl_secs": 604800, "max_uses": 10 }
+  ```
+
+  `ttl_secs` defaults to 72h; **omitting `max_uses` means unlimited uses**, so set it deliberately.
+
+Then, as the recipient: open the invite link, or Chat tab → paste into *Invite code* → tick the age/terms box → **Join community**. On success the socket reconnects immediately instead of waiting out the backoff.
 
 Pointing at a different Buzz community is one line and no code change — `EXPO_PUBLIC_NOSTR_RELAY=wss://<host>` — since the dialect is detected from that relay's NIP-11 document.
 
-**What is and isn't proven.** Verified live against this relay: NIP-11 capability detection, the AUTH challenge/response shape, the `restricted: not a relay member` rejection, the join-policy fetch, the age gate being server-enforced, and NIP-98 signing (a correctly signed claim reaches `403 invite_invalid`, while a corrupted signature gets `401 invalid Schnorr signature` and a mismatched body gets `401 payload tag SHA-256 mismatch` — so the 403 really does mean auth passed). NIP-44 v2 passes all 122 official vectors and NIP-17 wrapping is unit-tested including stranger-blocked and tamper-rejected cases. **Unexercised pending a real invite code:** a successful claim, NIP-42 succeeding as a member, NIP-29 group discovery, and kind-9 send/receive over the wire.
+**What is and isn't proven.** Verified live against this relay: NIP-11 capability detection, the AUTH challenge/response shape, the `restricted: not a relay member` rejection, the join-policy fetch, the age gate being server-enforced, `POST /api/invites` answering `401 missing Nostr auth` unsigned, and NIP-98 signing (a correctly signed claim reaches `403 invite_invalid`, while a corrupted signature gets `401 invalid Schnorr signature` and a mismatched body gets `401 payload tag SHA-256 mismatch` — so the 403 really does mean auth passed). NIP-44 v2 passes all 122 official vectors, NIP-17 wrapping is unit-tested including stranger-blocked and tamper-rejected cases, and the mint request's NIP-98 binding — signature, `u`, `method`, and the `payload` hash over the exact bytes sent — is asserted in `src/chat/buzz.test.ts`. **Unexercised pending real credentials:** a successful mint (needs an owner/admin key), a successful claim, NIP-42 succeeding as a member, NIP-29 group discovery, and kind-9 send/receive over the wire.
 
 ---
 

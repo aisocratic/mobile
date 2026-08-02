@@ -104,6 +104,24 @@ export type RelayCapabilities = {
 
 export type ChatJoinResult = { status: "joined" | "already_member" }
 
+/**
+ * A freshly minted invite. `code` is a secret the relay hands back exactly
+ * once — there is no endpoint that reads it again — so the UI has to treat
+ * losing it as losing the invite.
+ */
+export type ChatInvite = {
+  code: string
+  /** Epoch seconds. */
+  expiresAt: number
+  /** `null` means unlimited uses. */
+  maxUses: number | null
+  usesRemaining: number | null
+  /** Shareable landing page hosted by the relay. */
+  url: string
+}
+
+export type ChatInviteOptions = { ttlSecs: number; maxUses: number | null }
+
 export type ChatAdapter = {
   readonly id: string
   readonly relayUrl: string
@@ -132,6 +150,15 @@ export type ChatAdapter = {
    * must come from a real affirmative user action, not a default.
    */
   joinWithInvite(code: string, ageConfirmed: boolean): Promise<ChatJoinResult>
+
+  /**
+   * Mint an invite code to hand to someone else.
+   *
+   * Offered to every member and authorized server-side by role: a key that
+   * isn't an owner or admin is refused with a 403 the UI can explain. Rejects
+   * on a relay that has no invite API at all.
+   */
+  createInvite(options: ChatInviteOptions): Promise<ChatInvite>
 
   /** Turn a `/chat/[id]` param into a channel, hitting Supabase for DMs. */
   resolveChannel(routeId: string): Promise<ChatChannel | null>

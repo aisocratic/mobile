@@ -1,12 +1,12 @@
 import { Ionicons } from "@expo/vector-icons"
 import * as WebBrowser from "expo-web-browser"
-import React, { useState } from "react"
+import React, { useEffect, useState } from "react"
 import { Pressable, ScrollView, StyleSheet, View } from "react-native"
 
 import { Button, Field, Muted, Txt } from "@/components/ui"
 import { layout, usePalette } from "@/theme"
 
-import { policyDocumentUrls, useJoinCommunity } from "./index"
+import { policyDocumentUrls, useJoinCommunity, usePendingInvite } from "./index"
 
 /**
  * The "you're not a member yet" screen for a closed Buzz community.
@@ -20,16 +20,26 @@ import { policyDocumentUrls, useJoinCommunity } from "./index"
  *
  *  - The code is *pasted*, never shipped. An `EXPO_PUBLIC_` invite would be
  *    extractable from the bundle and, since invites can have unlimited uses,
- *    would quietly make a private community joinable by anyone.
+ *    would quietly make a private community joinable by anyone. A code that
+ *    arrived by link is prefilled, because the user chose to open that link —
+ *    that is still their code, not the build's.
  *  - Age attestation is a real checkbox. The community sets
  *    `age_attestation_required: true`, and auto-sending `age_confirmed: true`
- *    would be forging a consent step rather than collecting one.
+ *    would be forging a consent step rather than collecting one. Prefilling
+ *    the code deliberately does *not* extend to prefilling this.
  */
 export function JoinCommunity({ relayUrl }: { relayUrl: string }) {
   const p = usePalette()
   const [code, setCode] = useState("")
   const [ageConfirmed, setAgeConfirmed] = useState(false)
   const { join, joining, error } = useJoinCommunity()
+  const pendingCode = usePendingInvite()
+
+  // Only ever fills an untouched field: a code the user is mid-way through
+  // typing outranks one that arrived by link.
+  useEffect(() => {
+    if (pendingCode) setCode((current) => current || pendingCode)
+  }, [pendingCode])
 
   const docs = policyDocumentUrls(relayUrl)
   const host = relayUrl.replace(/^wss?:\/\//, "")

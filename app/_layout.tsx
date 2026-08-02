@@ -69,6 +69,9 @@ function RootNavigator() {
         name="chat/[id]"
         options={{ title: "Chat", headerBackButtonDisplayMode: "minimal" }}
       />
+      <Stack.Screen name="invite/new" options={{ title: "Invite" }} />
+      {/* Landing route for a shared invite link; it redirects on mount. */}
+      <Stack.Screen name="invite/[code]" options={{ headerShown: false }} />
     </Stack>
   )
 }

@@ -1,5 +1,5 @@
 /**
- * Buzz community HTTP API — join policy and invite redemption.
+ * Buzz community HTTP API — join policy, invite minting and redemption.
  *
  * The Buzz relay is a *closed* relay: `limitation.auth_required` and
  * `restricted_writes` are both true, and a key that isn't a member cannot even
@@ -20,8 +20,18 @@
  *                                    signed by the joining key. Deliberately
  *                                    exempt from the membership gate.
  *
- * `POST /api/invites` (minting) is owner/admin-only and is not something this
- * app ever calls — a code has to come from the community owner.
+ * The other half of the loop is minting:
+ *
+ *   POST /api/invites                {ttl_secs, max_uses} + NIP-98 header.
+ *                                    Authorization mirrors kind:9030 — the
+ *                                    signing key must hold `owner` or `admin`
+ *                                    in the community, and everyone else gets
+ *                                    403. Returns the code, its expiry, and a
+ *                                    relay-hosted landing page URL.
+ *
+ * Minting is a *user* action here, not a build-time one: the app never ships a
+ * code, it asks the relay to mint one on behalf of whoever is signed in, and
+ * the relay decides whether that key is allowed to.
  */
 
 import { nip98AuthHeader } from "./protocol"
@@ -41,6 +51,36 @@ export type ClaimResult = {
   communityId: string | null
   host: string | null
   role: string | null
+}
+
+/**
+ * Bounds the relay enforces on a minted invite, mirrored from
+ * `buzz_core::invite` so the UI can offer only choices the server will accept
+ * and reject the rest without spending a signed request.
+ */
+export const INVITE_LIMITS = {
+  minTtlSecs: 60,
+  defaultTtlSecs: 72 * 60 * 60,
+  maxTtlSecs: 30 * 24 * 60 * 60,
+  maxUses: 10_000,
+} as const
+
+export type InviteOptions = {
+  /** Lifetime in seconds, within `INVITE_LIMITS`. */
+  ttlSecs: number
+  /** `null` mints an unlimited-use code — Buzz's default, and a real footgun. */
+  maxUses: number | null
+}
+
+export type MintedInvite = {
+  /** The secret itself, `v2.…`. Returned once, at mint time, and never again. */
+  code: string
+  /** Epoch seconds, as the relay computed it. */
+  expiresAt: number
+  maxUses: number | null
+  usesRemaining: number | null
+  /** Relay-hosted landing page for the code — the thing you actually send. */
+  url: string
 }
 
 /** Thrown for a relay-reported failure; `code` is Buzz's own error string. */
@@ -77,6 +117,21 @@ function describeBuzzError(code: string): string {
       return "This community has no join policy configured."
     case "too many invite claim attempts, slow down":
       return "Too many attempts. Wait a minute and try again."
+
+    /* Minting. The relay's own strings are already sentences, so these exist
+       to add the bit it can't know: what the person should do next. */
+    case "only relay owners and admins can create invites":
+      return "Only the community's owners and admins can create invites. Ask one of them for a code."
+    case "missing Nostr auth":
+    case "invalid Nostr auth":
+      return "This device couldn't prove which key it holds. Sign out and back in, then try again."
+    case "invite_ttl_out_of_range":
+      return "Pick an expiry between 1 minute and 30 days."
+    case "invite_max_uses_out_of_range":
+      return `Pick a use limit between 1 and ${INVITE_LIMITS.maxUses}.`
+    case "invite_mint_failed":
+      return "The community accepted the request but didn't return a code."
+
     default:
       return code || "The community rejected the request."
   }
@@ -171,6 +226,83 @@ export async function acceptJoinPolicy(
   const parsed = (await readJson(response)) as { receipt?: string }
   if (!parsed.receipt) throw new BuzzApiError("join_policy_required", response.status)
   return parsed.receipt
+}
+
+/**
+ * Mint an invite code, proving control of `sk` via NIP-98.
+ *
+ * The relay authorizes this by *role*, not by endpoint secrecy: it looks the
+ * signing key up in the community and refuses anything that isn't `owner` or
+ * `admin` with 403. So this is safe to offer to every signed-in member — the
+ * server is the one deciding, and a member who isn't an admin gets a clear
+ * answer instead of a hidden button.
+ *
+ * The code comes back exactly once. There is no endpoint that reads it again,
+ * so a caller that drops it has to mint another.
+ */
+export async function mintInvite(
+  relayUrl: string,
+  sk: Uint8Array,
+  options: InviteOptions,
+): Promise<MintedInvite> {
+  const ttlSecs = Math.round(options.ttlSecs)
+  const maxUses = options.maxUses
+
+  // Check the relay's own bounds before signing. Every NIP-98 event we send is
+  // one its replay guard has to remember, so burning one on a request the
+  // server will certainly reject is pure waste.
+  if (
+    !Number.isFinite(ttlSecs) ||
+    ttlSecs < INVITE_LIMITS.minTtlSecs ||
+    ttlSecs > INVITE_LIMITS.maxTtlSecs
+  ) {
+    throw new BuzzApiError("invite_ttl_out_of_range", 400)
+  }
+  if (
+    maxUses !== null &&
+    (!Number.isInteger(maxUses) || maxUses < 1 || maxUses > INVITE_LIMITS.maxUses)
+  ) {
+    throw new BuzzApiError("invite_max_uses_out_of_range", 400)
+  }
+
+  const url = `${relayHttpOrigin(relayUrl)}/api/invites`
+  // `max_uses: null` is how Buzz spells "unlimited". Sending the key
+  // explicitly keeps that an expressed choice rather than an omission.
+  // Serialised once and reused — NIP-98's `payload` tag hashes these bytes.
+  const body = JSON.stringify({ ttl_secs: ttlSecs, max_uses: maxUses })
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      accept: "application/json",
+      authorization: nip98AuthHeader(sk, url, "POST", body),
+    },
+    body,
+  })
+  if (!response.ok) throw await failFrom(response)
+
+  const parsed = (await readJson(response)) as {
+    code?: string
+    expires_at?: number
+    max_uses?: number | null
+    uses_remaining?: number | null
+    url?: string
+  }
+  if (!parsed.code) throw new BuzzApiError("invite_mint_failed", response.status)
+
+  return {
+    code: parsed.code,
+    expiresAt:
+      typeof parsed.expires_at === "number"
+        ? parsed.expires_at
+        : Math.floor(Date.now() / 1000) + ttlSecs,
+    // `max_uses` is null for an unlimited code, so the absence of a number is
+    // meaningful here rather than a parse failure.
+    maxUses: typeof parsed.max_uses === "number" ? parsed.max_uses : null,
+    usesRemaining: typeof parsed.uses_remaining === "number" ? parsed.uses_remaining : null,
+    url: parsed.url ?? `${relayHttpOrigin(relayUrl)}/invite/${parsed.code}`,
+  }
 }
 
 /**

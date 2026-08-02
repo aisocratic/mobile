@@ -3,6 +3,7 @@ import { Tabs } from "expo-router"
 import React from "react"
 import { StyleSheet } from "react-native"
 
+import { InviteButton } from "@/chat/invite-button"
 import { usePalette } from "@/theme"
 
 export default function TabsLayout() {
@@ -45,6 +46,8 @@ export default function TabsLayout() {
         options={{
           title: "Chat",
           tabBarIcon: ({ color, size }) => <Ionicons name="chatbubbles" size={size} color={color} />,
+          // Renders nothing on an open relay or before this key is a member.
+          headerRight: () => <InviteButton />,
         }}
       />
       <Tabs.Screen
