@@ -132,6 +132,25 @@ function describeBuzzError(code: string): string {
     case "invite_mint_failed":
       return "The community accepted the request but didn't return a code."
 
+    /* Auto-join. These describe *our* server rather than the relay, and each
+       one leaves the pasted-code path working — so they say what happened
+       without implying the user is stuck. */
+    case "auto_join_unavailable":
+      return "Automatic joining isn't set up for this build. Enter an invite code instead."
+    case "auto_join_unreachable":
+      return "Couldn't reach aisocratic.org to set up your account. Check your connection, or enter an invite code."
+    case "auto_join_no_code":
+      return "The server didn't return an invite. Try again, or enter a code instead."
+    case "invalid_session":
+    case "missing_authorization":
+      return "Your session has expired. Sign out and back in, then try again."
+    case "email_unconfirmed":
+      return "Confirm your email address before joining the community."
+    case "relay_unreachable":
+      return "The community relay didn't respond. Try again in a moment."
+    case "server_misconfigured":
+      return "Automatic joining is misconfigured on the server. Enter an invite code instead."
+
     default:
       return code || "The community rejected the request."
   }
@@ -371,4 +390,85 @@ export async function joinCommunity(
   }
 
   return claimInvite(relayUrl, sk, trimmed, receipt)
+}
+
+/* -------------------------------------------------------------- auto-join */
+
+/**
+ * Where the app asks for an invite on the user's behalf.
+ *
+ * This is a URL, not a secret, which is the entire point. Minting requires an
+ * owner/admin key; that key stays on the server behind this endpoint and is
+ * never in the bundle. What the endpoint hands back is a single-use code that
+ * expires in five minutes, so intercepting one buys a stranger nothing they
+ * could not get by asking a member.
+ *
+ * Unset means auto-join is simply off and the app asks for a pasted code, which
+ * is how joining has always worked. See `.env.example`.
+ */
+export const AUTO_JOIN_URL = process.env.EXPO_PUBLIC_BUZZ_JOIN_URL?.trim() || null
+
+/** True when this build can attempt to fetch an invite for the user. */
+export function autoJoinConfigured(): boolean {
+  return AUTO_JOIN_URL !== null
+}
+
+/**
+ * Ask the server to mint an invite for the signed-in user.
+ *
+ * `accessToken` is the Supabase session JWT: it is what proves to our server
+ * that the caller is a real account rather than anyone who found the URL. The
+ * pubkey travels along only so the server can log which key it minted for —
+ * the claim below is authenticated by a NIP-98 signature, so a forged value
+ * here would gain nothing.
+ */
+export async function requestAutoInvite(
+  accessToken: string,
+  pubkey: string,
+): Promise<string> {
+  if (!AUTO_JOIN_URL) throw new BuzzApiError("auto_join_unavailable", 501)
+
+  let response: Response
+  try {
+    response = await fetch(AUTO_JOIN_URL, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json",
+        authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ nostr_pubkey: pubkey }),
+    })
+  } catch {
+    throw new BuzzApiError("auto_join_unreachable", 0)
+  }
+
+  if (!response.ok) {
+    const body = (await readJson(response)) as BuzzError
+    throw new BuzzApiError(body.error ?? `HTTP ${response.status}`, response.status)
+  }
+
+  const parsed = (await readJson(response)) as { code?: string }
+  if (!parsed.code) throw new BuzzApiError("auto_join_no_code", response.status)
+  return parsed.code
+}
+
+/**
+ * Join without the user ever seeing an invite code: fetch one, redeem it.
+ *
+ * `ageConfirmed` is still passed in from a real checkbox. Automating the code
+ * does not automate the consent — the relay sets
+ * `age_attestation_required: true`, and sending a hardcoded `true` here would
+ * be forging an attestation on the user's behalf rather than collecting one.
+ * What auto-join removes is the clerical work, not the agreement.
+ */
+export async function joinCommunityAutomatically(
+  relayUrl: string,
+  sk: Uint8Array,
+  accessToken: string,
+  pubkey: string,
+  ageConfirmed: boolean,
+): Promise<ClaimResult> {
+  const code = await requestAutoInvite(accessToken, pubkey)
+  return joinCommunity(relayUrl, sk, code, ageConfirmed)
 }

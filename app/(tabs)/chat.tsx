@@ -68,6 +68,18 @@ function IdentityBar({ status }: { status: ChatConnectionStatus }) {
           <Muted numberOfLines={1}>{shortNpub(identity.npub)}</Muted>
         </View>
       ) : null}
+      {/* A derived key means secure storage was unusable, so the key was
+          computed from the account id by a constant in this bundle — it works,
+          but anyone with the source can recompute it. Say so rather than
+          letting it pass for a generated one. */}
+      {identity?.source === "derived" ? (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <Ionicons name="warning-outline" size={12} color={p.danger} />
+          <Muted numberOfLines={2} style={{ flex: 1 }}>
+            This device couldn&apos;t store a private key, so chat is using a fallback identity.
+          </Muted>
+        </View>
+      ) : null}
     </View>
   )
 }

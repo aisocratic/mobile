@@ -28,22 +28,27 @@
  */
 
 import AsyncStorage from "@react-native-async-storage/async-storage"
-import * as SecureStore from "expo-secure-store"
 
 import { supabase } from "@/lib/supabase"
 
-import { joinCommunity, mintInvite } from "./buzz"
+import { loadOrCreateAccount, type ChatAccount } from "./account"
+import {
+  autoJoinConfigured,
+  fetchJoinPolicy,
+  joinCommunity,
+  joinCommunityAutomatically,
+  mintInvite,
+  BuzzApiError,
+} from "./buzz"
+import { lookupPubkey, registerChatIdentity } from "./directory"
 import { buildRumor, rumorPeer, unwrapGift, wrapForBoth } from "./nip17"
 import {
-  bytesToHex,
   channelAddress,
   channelCreateEvent,
-  deriveSecretKey,
   eventId,
   finalizeEvent,
   firstTag,
   getPublicKey,
-  hexToBytes,
   KIND_CHANNEL_MESSAGE,
   KIND_DM,
   KIND_GIFT_WRAP,
@@ -66,6 +71,7 @@ import type {
   ChatIdentity,
   ChatInvite,
   ChatInviteOptions,
+  ChatJoinPolicy,
   ChatJoinResult,
   ChatMessage,
   ChatProfile,
@@ -241,44 +247,17 @@ const BUILTIN_CHANNELS: ChatChannel[] = BUILTIN.map((c) => ({
 /* ------------------------------------------------------------- identity */
 
 /**
- * Chat keys are derived from the signed-in user's auth uuid rather than random,
- * because there is nowhere to publish a key directory: the app reads Supabase
- * but cannot write a `nostr_pubkey` column, so the only way one member can
- * address another is if both sides compute the same public key from an id they
- * already share.
+ * Chat accounts are real: a random secp256k1 keypair generated on the device,
+ * with the secret half in the Keychain (see ./account) and the public half
+ * published to `public.chat_identities` (see ./directory).
  *
- * Stated plainly: this derivation lives in the client bundle, so it is not a
- * secrecy boundary against someone holding this source. NIP-17 gift wrapping
- * still buys a great deal against the *relay* — it sees neither sender nor
- * content, only that someone messaged a pubkey — but a determined reader of
- * this repo could derive a member's key. The fix is random keys plus a
- * published directory; the key is already stored per-user below so that
- * migration needs no data-model change.
+ * They used to be derived from the signed-in user's auth uuid by a constant in
+ * this bundle, because without a directory that was the only way two devices
+ * could agree on a key — and it meant anyone who read this source could
+ * compute any member's secret key. The directory removed that constraint, so
+ * the derivation survives only as a fallback for members the directory does
+ * not know about yet, applied inside `lookupPubkey`.
  */
-const KEY_DERIVATION_PREFIX = "aisocratic:nostr:v1:"
-
-const secretKeyStorageKey = (userId: string) => `aisocratic.chat.sk.${userId}`
-
-export function pubkeyForPerson(personId: string): string {
-  return getPublicKey(deriveSecretKey(KEY_DERIVATION_PREFIX + personId))
-}
-
-async function loadSecretKey(userId: string): Promise<Uint8Array> {
-  try {
-    const stored = await SecureStore.getItemAsync(secretKeyStorageKey(userId))
-    if (stored && stored.length === 64) return hexToBytes(stored)
-  } catch {
-    /* a locked keychain must not break chat; the derivation is the same */
-  }
-
-  const sk = deriveSecretKey(KEY_DERIVATION_PREFIX + userId)
-  try {
-    await SecureStore.setItemAsync(secretKeyStorageKey(userId), bytesToHex(sk))
-  } catch {
-    /* best effort */
-  }
-  return sk
-}
 
 /* -------------------------------------------------------- NIP-29 helpers */
 
@@ -324,8 +303,10 @@ class NostrChatAdapter implements ChatAdapter {
 
   private relay = new RelayClient(RELAY_URL)
   private userId: string
-  private skPromise: Promise<Uint8Array> | null = null
+  private accountPromise: Promise<ChatAccount> | null = null
+  private registration: Promise<boolean> | null = null
   private capsPromise: Promise<RelayCapabilities> | null = null
+  private policyPromise: Promise<ChatJoinPolicy | null> | null = null
   private announcedRooms = false
   private announcedProfile: string | null = null
   /** address -> channel, so a message can be routed back to its room. */
@@ -344,10 +325,32 @@ class NostrChatAdapter implements ChatAdapter {
     this.relay.connect()
   }
 
-  /** Cached so the SecureStore round trip happens once per session. */
-  private secretKey(): Promise<Uint8Array> {
-    if (!this.skPromise) this.skPromise = loadSecretKey(this.userId)
-    return this.skPromise
+  /**
+   * The account, created on first use. Cached so the Keychain round trip and
+   * the directory write happen once per session rather than once per caller.
+   */
+  private account(): Promise<ChatAccount> {
+    if (!this.accountPromise) {
+      this.accountPromise = loadOrCreateAccount(this.userId).then((account) => {
+        // Publishing the public key is what makes this account reachable, so
+        // it starts as soon as the key exists rather than waiting for someone
+        // to open a conversation. It is fire-and-forget: a directory that is
+        // briefly unreachable must not stop the user from reading messages.
+        this.registration = registerChatIdentity({
+          userId: this.userId,
+          pubkey: account.pubkey,
+          relayUrl: this.relayUrl,
+        })
+          .then(() => true)
+          .catch(() => false)
+        return account
+      })
+    }
+    return this.accountPromise
+  }
+
+  private async secretKey(): Promise<Uint8Array> {
+    return (await this.account()).sk
   }
 
   capabilities(): Promise<RelayCapabilities> {
@@ -356,9 +359,13 @@ class NostrChatAdapter implements ChatAdapter {
   }
 
   async identity(): Promise<ChatIdentity> {
-    const sk = await this.secretKey()
-    const pubkey = getPublicKey(sk)
-    return { pubkey, npub: npubEncode(pubkey) }
+    const account = await this.account()
+    return {
+      pubkey: account.pubkey,
+      npub: npubEncode(account.pubkey),
+      source: account.source,
+      registered: (await this.registration) ?? false,
+    }
   }
 
   status(): ChatConnectionStatus {
@@ -375,13 +382,78 @@ class NostrChatAdapter implements ChatAdapter {
 
   /* ----------------------------------------------------------- joining */
 
+  readonly canAutoJoin = autoJoinConfigured()
+
+  /** Cached: the policy changes at the community's pace, not the app's. */
+  joinPolicy(): Promise<ChatJoinPolicy | null> {
+    if (!this.policyPromise) {
+      this.policyPromise = fetchJoinPolicy(this.relayUrl).catch(() => null)
+    }
+    return this.policyPromise
+  }
+
   async joinWithInvite(code: string, ageConfirmed: boolean): Promise<ChatJoinResult> {
     const sk = await this.secretKey()
     const result = await joinCommunity(this.relayUrl, sk, code, ageConfirmed)
-    // The key the relay just refused is now a member — reconnect immediately
-    // rather than leaving the user on "not a member" until the backoff expires.
-    this.relay.reconnectNow()
+    await this.afterJoin(result)
     return { status: result.status }
+  }
+
+  /**
+   * Join without the user handling a code at all: our server mints a
+   * single-use invite for this session, and this key redeems it immediately.
+   *
+   * The owner key that does the minting is not in this bundle and never
+   * reaches the device — see `./buzz`. What arrives here is a code that is
+   * spent on the next line and worthless five minutes later.
+   */
+  async autoJoin(ageConfirmed: boolean): Promise<ChatJoinResult> {
+    if (!this.canAutoJoin) throw new BuzzApiError("auto_join_unavailable", 501)
+
+    const { data } = await supabase.auth.getSession()
+    const accessToken = data.session?.access_token
+    if (!accessToken) throw new BuzzApiError("invalid_session", 401)
+
+    const account = await this.account()
+    const result = await joinCommunityAutomatically(
+      this.relayUrl,
+      account.sk,
+      accessToken,
+      account.pubkey,
+      ageConfirmed,
+    )
+    await this.afterJoin(result)
+    return { status: result.status }
+  }
+
+  /**
+   * Shared tail of both join paths: record the membership, then reconnect.
+   *
+   * The reconnect is the point — the key the relay refused a moment ago is now
+   * a member, and without it the user sits on "not a member" until the backoff
+   * expires. Recording the membership is best-effort: it is a convenience for
+   * the next launch, and failing to write it must not undo a real join.
+   */
+  private async afterJoin(result: { communityId: string | null; role: string | null }) {
+    try {
+      // An upsert rather than an update: the registration kicked off in
+      // `account()` is fire-and-forget, so it may have failed or still be in
+      // flight. Updating would then match zero rows and lose the membership
+      // silently — and leave the user unregistered, which is worse, because
+      // nobody could address them.
+      const account = await this.account()
+      await registerChatIdentity({
+        userId: this.userId,
+        pubkey: account.pubkey,
+        relayUrl: this.relayUrl,
+        membership: { communityId: result.communityId, role: result.role },
+      })
+    } catch {
+      /* the relay is the authority on membership; this row is a cache */
+    }
+    // The key the relay refused a moment ago is now a member, so reconnect
+    // instead of leaving the user on "not a member" until the backoff expires.
+    this.relay.reconnectNow()
   }
 
   async createInvite(options: ChatInviteOptions): Promise<ChatInvite> {
@@ -524,8 +596,8 @@ class NostrChatAdapter implements ChatAdapter {
     }
 
     // Otherwise it's a person: the Connections feature routes here with an
-    // `event_users.id`. Prefer their claimed account id so the derived key
-    // matches the one they use when signed in.
+    // `event_users.id`. Prefer their claimed account id, since that is the id
+    // their chat account is registered under.
     const { data, error } = await supabase
       .from("event_users")
       .select("id,name,email,avatar_url,company,title,user_id")
@@ -544,7 +616,10 @@ class NostrChatAdapter implements ChatAdapter {
         topic: [row.title, row.company].filter(Boolean).join(" · ") || null,
         icon: null,
         avatarUrl: row.avatar_url,
-        address: pubkeyForPerson(identityId),
+        // The directory is authoritative; it falls back to the legacy derived
+        // key for anyone who has not registered one. An event guest with no
+        // account (`user_id` null) never registers, so they stay derived.
+        address: await lookupPubkey(identityId),
       }
     }
 
@@ -570,7 +645,7 @@ class NostrChatAdapter implements ChatAdapter {
       topic: [u.job_title, u.organization].filter(Boolean).join(" · ") || null,
       icon: null,
       avatarUrl: u.avatar_url,
-      address: pubkeyForPerson(u.id),
+      address: await lookupPubkey(u.id),
     }
   }
 

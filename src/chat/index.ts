@@ -12,6 +12,7 @@ import { useAuth } from "@/store/auth"
 
 import { BUZZ_RELAY_URL, getNostrAdapter, PUBLIC_RELAY_URL, RELAY_URL } from "./nostr"
 import { INVITE_LIMITS, policyDocumentUrls } from "./buzz"
+import { clearDirectoryCache } from "./directory"
 import { takePendingInvite } from "./pending-invite"
 import { shortNpub } from "./protocol"
 import {
@@ -39,6 +40,7 @@ import type {
   ChatIdentity,
   ChatInvite,
   ChatInviteOptions,
+  ChatJoinPolicy,
   ChatMessage,
   ChatProfile,
   RelayCapabilities,
@@ -55,8 +57,10 @@ export {
 export type {
   ChatChannel,
   ChatConnectionStatus,
+  ChatIdentity,
   ChatInvite,
   ChatInviteOptions,
+  ChatJoinPolicy,
   ChatMessage,
   ChatProfile,
   RelayCapabilities,
@@ -81,7 +85,12 @@ export function useChatAdapter(): ChatAdapter | null {
   const previousUser = useRef<string | null>(null)
 
   useEffect(() => {
-    if (previousUser.current && previousUser.current !== userId) clearStore()
+    if (previousUser.current && previousUser.current !== userId) {
+      clearStore()
+      // The directory maps member uuids to pubkeys and is readable only by the
+      // signed-in account, so it is per-session state like everything else here.
+      clearDirectoryCache()
+    }
     previousUser.current = userId
   }, [userId])
 
@@ -347,42 +356,124 @@ export function useRelayCapabilities(): RelayCapabilities | null {
 }
 
 /**
- * Redeem an invite code for membership of a closed relay.
+ * The whole "get me into this community" flow, in one hook.
  *
- * `ageConfirmed` is passed through from an explicit checkbox — the relay
- * rejects the request when it's false and age attestation is required, so
- * defaulting it to true would be forging a consent step rather than
- * satisfying one.
+ * There are three ways in, and which ones exist depends on the relay and the
+ * build rather than on anything the user did:
+ *
+ *   auto      our server mints a single-use invite for this account and the
+ *             app redeems it. No code ever reaches the user's hands.
+ *   link      a code arrived via `aisocratic://invite/<code>`; the user chose
+ *             to open that link, so it is theirs to spend.
+ *   paste     the original path, and the fallback whenever the first two are
+ *             unavailable or fail.
+ *
+ * What is deliberately NOT automated is the age attestation. The community
+ * sets `age_attestation_required: true`, and the relay rejects
+ * `age_confirmed: false` — so sending a hardcoded `true` would not be
+ * satisfying the requirement, it would be forging an answer to a question that
+ * was asked of a person. When the policy requires it there is a checkbox, and
+ * auto-join waits for it.
  */
-export function useJoinCommunity(): {
-  join: (code: string, ageConfirmed: boolean) => Promise<boolean>
+export type CommunityOnboarding = {
+  /** True when this build can fetch an invite on the user's behalf. */
+  canAutoJoin: boolean
+  /** True until the join policy is known — the checkbox depends on it. */
+  preparing: boolean
+  /** True when the community demands an explicit age attestation. */
+  requiresAgeAttestation: boolean
+  /** A code that arrived by deep link; `undefined` while still looking. */
+  linkedCode: string | null | undefined
   joining: boolean
-  error: string | null
   joined: boolean
+  error: string | null
+  /**
+   * True once the automatic path has been ruled out — either this build has no
+   * join endpoint, or an attempt failed — so the UI should ask for a code.
+   */
+  needsCode: boolean
+  /** Mint-and-redeem. Resolves false on failure, having set `error`. */
+  autoJoin: (ageConfirmed: boolean) => Promise<boolean>
+  /** Redeem a code the user pasted, or one that arrived by link. */
+  joinWithCode: (code: string, ageConfirmed: boolean) => Promise<boolean>
   reset: () => void
-} {
-  const adapter = useChatAdapter()
-  const [joining, setJoining] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [joined, setJoined] = useState(false)
+}
 
-  const join = useCallback(
-    async (code: string, ageConfirmed: boolean) => {
-      if (!adapter) return false
+export function useCommunityOnboarding(): CommunityOnboarding {
+  const adapter = useChatAdapter()
+  const linkedCode = usePendingInvite()
+
+  const [policyLoaded, setPolicyLoaded] = useState(false)
+  const [requiresAgeAttestation, setRequiresAgeAttestation] = useState(false)
+  const [joining, setJoining] = useState(false)
+  const [joined, setJoined] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [autoFailed, setAutoFailed] = useState(false)
+
+  const canAutoJoin = adapter?.canAutoJoin ?? false
+
+  useEffect(() => {
+    if (!adapter) return
+    let active = true
+    setPolicyLoaded(false)
+
+    adapter
+      .joinPolicy()
+      .then((policy) => {
+        if (!active) return
+        setRequiresAgeAttestation(policy?.ageAttestationRequired ?? false)
+        setPolicyLoaded(true)
+      })
+      .catch(() => {
+        if (!active) return
+        // Unknown policy: assume the attestation IS required. Guessing "not
+        // required" would hide the checkbox and send a join the relay refuses,
+        // which reads to the user as a broken app rather than a missing tick.
+        setRequiresAgeAttestation(true)
+        setPolicyLoaded(true)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [adapter])
+
+  const run = useCallback(
+    async (attempt: () => Promise<{ status: string }>, isAuto: boolean) => {
       setJoining(true)
       setError(null)
       try {
-        await adapter.joinWithInvite(code, ageConfirmed)
+        await attempt()
         setJoined(true)
         return true
       } catch (e: unknown) {
         setError(e instanceof Error ? e.message : "Could not join the community.")
+        // A failed auto-join is not a dead end — it just means the user has to
+        // do it the manual way, so surface the code field rather than leaving
+        // them on a button that already didn't work.
+        if (isAuto) setAutoFailed(true)
         return false
       } finally {
         setJoining(false)
       }
     },
-    [adapter],
+    [],
+  )
+
+  const autoJoin = useCallback(
+    async (ageConfirmed: boolean) => {
+      if (!adapter) return false
+      return run(() => adapter.autoJoin(ageConfirmed), true)
+    },
+    [adapter, run],
+  )
+
+  const joinWithCode = useCallback(
+    async (code: string, ageConfirmed: boolean) => {
+      if (!adapter) return false
+      return run(() => adapter.joinWithInvite(code, ageConfirmed), false)
+    },
+    [adapter, run],
   )
 
   const reset = useCallback(() => {
@@ -390,7 +481,19 @@ export function useJoinCommunity(): {
     setJoined(false)
   }, [])
 
-  return { join, joining, error, joined, reset }
+  return {
+    canAutoJoin,
+    preparing: !!adapter && !policyLoaded,
+    requiresAgeAttestation,
+    linkedCode,
+    joining,
+    joined,
+    error,
+    needsCode: !canAutoJoin || autoFailed,
+    autoJoin,
+    joinWithCode,
+    reset,
+  }
 }
 
 /**

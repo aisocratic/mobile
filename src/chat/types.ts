@@ -78,6 +78,15 @@ export type ChatIdentity = {
   pubkey: string
   /** NIP-19 bech32 encoding of the same key — what users see and share. */
   npub: string
+  /**
+   * How this key came to exist. `derived` means secure storage was unusable
+   * and the key was computed from the account id by a constant in this bundle
+   * — usable, but not private from anyone holding the source. The UI surfaces
+   * it rather than letting a weaker key masquerade as a generated one.
+   */
+  source: "created" | "stored" | "derived"
+  /** True once the public key is published to the directory for others to find. */
+  registered: boolean
 }
 
 export type ChatSubscription = { close: () => void }
@@ -103,6 +112,19 @@ export type RelayCapabilities = {
 }
 
 export type ChatJoinResult = { status: "joined" | "already_member" }
+
+/**
+ * What a closed community requires before it will admit a key.
+ *
+ * Only the parts the UI has to act on. `ageAttestationRequired` is the one
+ * that shapes the flow: when it is true there must be a checkbox, because the
+ * relay is asking a person a question and the app is not entitled to answer
+ * it for them.
+ */
+export type ChatJoinPolicy = {
+  version: string
+  ageAttestationRequired: boolean
+}
 
 /**
  * A freshly minted invite. `code` is a secret the relay hands back exactly
@@ -150,6 +172,28 @@ export type ChatAdapter = {
    * must come from a real affirmative user action, not a default.
    */
   joinWithInvite(code: string, ageConfirmed: boolean): Promise<ChatJoinResult>
+
+  /**
+   * Join with no invite code in the user's hands: the app asks our server to
+   * mint a single-use one and redeems it in the same breath.
+   *
+   * `ageConfirmed` is still a real checkbox. Automating the *code* is a
+   * convenience; automating the *attestation* would be forging it, and the
+   * relay would be right to treat a hardcoded `true` as a lie.
+   *
+   * Rejects when the build has no join endpoint configured, so callers can
+   * fall back to asking for a pasted code.
+   */
+  autoJoin(ageConfirmed: boolean): Promise<ChatJoinResult>
+
+  /** True when this build is configured to fetch invites on the user's behalf. */
+  readonly canAutoJoin: boolean
+
+  /**
+   * The community's join policy, or null when it has none. Callers need this
+   * to know whether an age attestation must be collected before joining.
+   */
+  joinPolicy(): Promise<ChatJoinPolicy | null>
 
   /**
    * Mint an invite code to hand to someone else.
