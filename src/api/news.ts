@@ -189,20 +189,22 @@ export async function fetchNewsItem(id: string): Promise<NewsItem> {
 
 /* -------------------------------------------------------------------- hooks */
 
-export function useNewsFeed(category: string | null) {
+export function useNewsFeed(category: string | null, enabled = true) {
   return useInfiniteQuery({
     queryKey: ["news", "feed", category ?? "all"],
     queryFn: ({ pageParam }) => fetchNewsPage(pageParam, category),
     initialPageParam: 0,
     getNextPageParam: (last: NewsPage) => last.next,
+    enabled,
   })
 }
 
-export function useNewsCategories() {
+export function useNewsCategories(enabled = true) {
   return useQuery({
     queryKey: ["news", "categories"],
     queryFn: fetchNewsCategories,
     staleTime: 30 * 60_000,
+    enabled,
   })
 }
 

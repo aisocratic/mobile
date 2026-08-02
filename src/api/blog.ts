@@ -59,10 +59,11 @@ async function fetchPost(slug: string): Promise<BlogPost | null> {
   return (data ?? null) as unknown as BlogPost | null
 }
 
-export function useBlogPosts(includeMembersOnly: boolean) {
+export function useBlogPosts(includeMembersOnly: boolean, enabled = true) {
   return useQuery({
     queryKey: blogKeys.list(includeMembersOnly),
     queryFn: () => fetchPosts(includeMembersOnly),
+    enabled,
   })
 }
 

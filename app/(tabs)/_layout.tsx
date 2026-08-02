@@ -34,17 +34,10 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="news"
+        name="feed"
         options={{
-          title: "News",
-          tabBarIcon: ({ color, size }) => <Ionicons name="flash" size={size} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="blog"
-        options={{
-          title: "Blog",
-          tabBarIcon: ({ color, size }) => <Ionicons name="book" size={size} color={color} />,
+          title: "Feed",
+          tabBarIcon: ({ color, size }) => <Ionicons name="newspaper" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
@@ -58,8 +51,8 @@ export default function TabsLayout() {
         name="connections"
         options={{
           title: "Connections",
-          // "Connections" truncates in a six-tab bar; the screen header keeps
-          // the full word.
+          // "Connections" truncates in the tab bar; the screen header keeps the
+          // full word.
           tabBarLabel: "People",
           tabBarIcon: ({ color, size }) => <Ionicons name="people" size={size} color={color} />,
         }}
