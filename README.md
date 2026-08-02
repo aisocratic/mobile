@@ -112,16 +112,16 @@ Which sections exist in a build is a flag, not a branch — see `src/features.ts
 | --- | --- | --- |
 | Feed | ✅ | Landing tab |
 | Events | ✅ | |
-| Connections ("People") | ✅ | ⚠️ Returns an empty list for non-admin accounts — see limitation 4 |
+| Chat | ✅ | Channels + a **People** segment: the community directory, one tap from a DM |
 | Profile | ✅ | Holds sign-out; on by default so nobody is stranded signed in |
-| Chat | ❌ | Built and tested; needs the `chat_identities` migration applied and `BUZZ_OWNER_KEY` set |
+| Connections ("People") | ❌ | Superseded by chat's People segment. Its pipeline reads `event_attendance`, which RLS scopes to rows you already share — so it returned an empty list for every non-admin account (limitation 4) |
 
 Flip one with `EXPO_PUBLIC_FEATURES`, whose entries are **deltas** against those defaults so adding a feature later doesn't mean editing every deployment:
 
 ```bash
-EXPO_PUBLIC_FEATURES=chat            # turn chat back on
-EXPO_PUBLIC_FEATURES=-connections    # hide the People tab
-EXPO_PUBLIC_FEATURES=chat,-profile   # both, left to right
+EXPO_PUBLIC_FEATURES=connections     # bring the old Connections tab back
+EXPO_PUBLIC_FEATURES=-chat           # hide chat
+EXPO_PUBLIC_FEATURES=connections,-profile   # both, left to right
 ```
 
 A disabled section loses its **tab and its routes**. `href: null` takes it out of the tab bar; the guard in `app/_layout.tsx` catches everything that doesn't come through the bar — deep links, `aisocratic://invite/<code>`, the Message button on a member profile — and redirects to `homeRoute()`, which follows the flags rather than naming a tab. Switching off the landing tab moves the landing tab; it can't strand the app on a screen the build doesn't ship.
@@ -229,7 +229,7 @@ Two things the live data forced:
 
 ### Chat
 
-> **Off in the first release** (`src/features.ts`). Everything below is built and tested; it needs the `chat_identities` migration applied and `BUZZ_OWNER_KEY` set on the server. Re-enable with `EXPO_PUBLIC_FEATURES=chat`.
+> **Shipping in the first release.** The `chat_identities` migration is applied to production (2026-08-02) and a chat account registers on first launch — verified end to end. The community **owner key is configured on the server**, and it mints real invites: a NIP-98 request signed with it returns `200` and a live single-use code. What remains is deploying `/api/buzz/join` so the app can reach it; until then the app falls back to the pasted-code flow.
 
 Chat doesn't exist on the website. The brief said to use **buzz.xyz** — so first, what buzz.xyz actually is:
 
