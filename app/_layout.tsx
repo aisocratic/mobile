@@ -9,7 +9,7 @@ import { Loading } from "@/components/ui"
 import { homeRoute, isEnabled } from "@/features"
 import { queryClient } from "@/lib/query"
 import { AuthProvider, useAuth } from "@/store/auth"
-import { usePalette, useIsDark } from "@/theme"
+import { ThemeProvider, usePalette, useIsDark } from "@/theme"
 
 // expo-router renders this in place of the whole route when RootLayout below
 // throws, so it covers every screen in the app — see
@@ -127,20 +127,33 @@ function RootNavigator() {
   )
 }
 
-export default function RootLayout() {
+function Themed() {
   const isDark = useIsDark()
 
   return (
+    <>
+      <StatusBar style={isDark ? "light" : "dark"} />
+      <AuthGate>
+        <RootNavigator />
+      </AuthGate>
+    </>
+  )
+}
+
+export default function RootLayout() {
+  return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <QueryClientProvider client={queryClient}>
-          <AuthProvider>
-            <StatusBar style={isDark ? "light" : "dark"} />
-            <AuthGate>
-              <RootNavigator />
-            </AuthGate>
-          </AuthProvider>
-        </QueryClientProvider>
+        {/* Outermost of the app's own providers: it owns the single
+            `useColorScheme` subscription every `usePalette` call reads from,
+            so it has to sit above anything that renders. */}
+        <ThemeProvider>
+          <QueryClientProvider client={queryClient}>
+            <AuthProvider>
+              <Themed />
+            </AuthProvider>
+          </QueryClientProvider>
+        </ThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   )

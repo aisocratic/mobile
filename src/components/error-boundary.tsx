@@ -5,17 +5,19 @@ import { ErrorState, Screen } from "@/components/ui"
 import { lightPalette, usePalette, type Palette } from "@/theme"
 
 /**
- * `usePalette` only reads `useColorScheme`, so today it works with nothing
- * mounted above it. But this component can end up rendered in place of
- * `app/_layout.tsx` itself — expo-router swaps in the whole route's
- * `ErrorBoundary` export when that route throws, so a crash inside
- * `RootLayout` means `GestureHandlerRootView`, `SafeAreaProvider`,
- * `QueryClientProvider` and `AuthProvider` never mounted at all. If theme.ts
- * ever grows a context dependency, that would turn a real bug into a second,
- * unrecoverable crash inside the screen whose one job is to survive crashes.
- * The try/catch is cheap insurance against that; a hardcoded palette beats no
- * screen. For the same reason, never reach for provider-backed hooks here
- * (useAuth, useSafeAreaInsets, useQuery, ...) no matter how tempting.
+ * This component can end up rendered in place of `app/_layout.tsx` itself —
+ * expo-router swaps in the whole route's `ErrorBoundary` export when that route
+ * throws, so a crash inside `RootLayout` means `GestureHandlerRootView`,
+ * `SafeAreaProvider`, `ThemeProvider`, `QueryClientProvider` and `AuthProvider`
+ * never mounted at all.
+ *
+ * `usePalette` is built for exactly that: it reads `ThemeProvider`'s context
+ * when there is one and falls back to a direct `Appearance` read when there
+ * isn't, so it cannot throw here. The try/catch stays anyway, because the cost
+ * is one branch and the failure it guards against is a second, unrecoverable
+ * crash inside the screen whose only job is to survive crashes. For the same
+ * reason, never reach for a hook that *does* require its provider (useAuth,
+ * useSafeAreaInsets, useQuery, ...) no matter how tempting.
  */
 function useSafePalette(): Palette {
   try {
