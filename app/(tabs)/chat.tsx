@@ -1,21 +1,9 @@
 import { Ionicons } from "@expo/vector-icons"
 import { useRouter } from "expo-router"
-import React, { useCallback, useMemo, useState } from "react"
-import { FlatList, Pressable, RefreshControl, StyleSheet, View } from "react-native"
+import React, { useCallback, useState } from "react"
+import { FlatList, Pressable, StyleSheet, View } from "react-native"
 
-import { filterCommunityMembers, useCommunityMembers, type CommunityMember } from "@/api/people"
-import {
-  Avatar,
-  Divider,
-  EmptyState,
-  ErrorState,
-  Field,
-  Loading,
-  Muted,
-  SegmentedControl,
-  Txt,
-} from "@/components/ui"
-import { FadeIn } from "@/components/fade-in"
+import { Avatar, Divider, EmptyState, ErrorState, Loading, Muted, SegmentedControl, Txt } from "@/components/ui"
 import {
   RELAY_URL,
   shortNpub,
@@ -25,6 +13,7 @@ import {
   type ChatConnectionStatus,
 } from "@/chat"
 import { JoinCommunity } from "@/chat/join-community"
+import { PeopleList } from "@/chat/people-list"
 import { SignInPrompt } from "@/chat/sign-in-prompt"
 import { excerpt, timeAgo } from "@/lib/format"
 import { useAuth } from "@/store/auth"
@@ -173,9 +162,9 @@ function ChannelRow({ summary, onPress }: { summary: ChannelSummary; onPress: ()
  *
  * `not-a-member` used to replace the whole chat tab with the invite flow.
  * Now it only replaces this segment: DMs and the People directory don't need
- * relay membership at all (see `PeopleSegment`), so someone browsing the
- * community shouldn't be forced through an invite gate just because they
- * haven't touched the channel list yet.
+ * relay membership at all (see `PeopleList` in `src/chat/people-list.tsx`),
+ * so someone browsing the community shouldn't be forced through an invite
+ * gate just because they haven't touched the channel list yet.
  */
 function ChannelsSegment({
   summaries,
@@ -240,129 +229,6 @@ function ChannelsSegment({
   )
 }
 
-/* ----------------------------------------------------------- people row */
-
-// Long member lists shouldn't take seconds to finish animating in; everyone
-// past the cap arrives on the same beat as row 10 instead of queuing further.
-const STAGGER_CAP = 10
-const STAGGER_STEP = 35
-
-function PersonRow({
-  member,
-  index,
-  onPress,
-}: {
-  member: CommunityMember
-  index: number
-  onPress: () => void
-}) {
-  const p = usePalette()
-  const affiliation = [member.jobTitle, member.organization].filter(Boolean).join(" · ")
-
-  return (
-    <FadeIn delay={Math.min(index, STAGGER_CAP) * STAGGER_STEP} offset={8}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={member.fullName}
-        onPress={onPress}
-        style={({ pressed }) => ({
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 12,
-          paddingHorizontal: layout.gutter,
-          paddingVertical: 12,
-          backgroundColor: pressed ? p.surface : "transparent",
-        })}
-      >
-        <Avatar uri={member.avatarUrl} name={member.fullName} size={44} />
-        <View style={{ flex: 1, gap: 2 }}>
-          <Txt variant="heading" numberOfLines={1}>
-            {member.fullName}
-          </Txt>
-          {affiliation ? (
-            <Txt variant="body" color={p.muted} numberOfLines={1}>
-              {affiliation}
-            </Txt>
-          ) : null}
-          {member.location ? <Muted numberOfLines={1}>{member.location}</Muted> : null}
-        </View>
-        <Ionicons name="chevron-forward" size={16} color={p.border} />
-      </Pressable>
-    </FadeIn>
-  )
-}
-
-/**
- * The member directory: everyone in the community, searchable, one tap from a
- * DM. Deliberately independent of the relay — it reads `public.users` over
- * PostgREST, not Nostr, so it renders the same whether the socket above is
- * live, reconnecting, or this key hasn't joined the relay's rooms yet.
- */
-function PeopleSegment({ onOpen }: { onOpen: (id: string) => void }) {
-  const p = usePalette()
-  const [search, setSearch] = useState("")
-  const { data, isPending, isFetching, error, refetch } = useCommunityMembers()
-
-  const members = data ?? []
-  const visible = useMemo(() => filterCommunityMembers(members, search), [members, search])
-
-  const renderItem = useCallback(
-    ({ item, index }: { item: CommunityMember; index: number }) => (
-      <PersonRow member={item} index={index} onPress={() => onOpen(item.id)} />
-    ),
-    [onOpen],
-  )
-
-  const empty = isPending ? (
-    <Loading label="Finding people…" />
-  ) : error ? (
-    <ErrorState error={error} onRetry={() => void refetch()} />
-  ) : members.length === 0 ? (
-    <EmptyState
-      icon="people-outline"
-      title="No one here yet"
-      body="Once people join the community, you'll be able to find them here and start a conversation."
-    />
-  ) : (
-    <EmptyState icon="search-outline" title="No matches" body="Try a different name, company or location." />
-  )
-
-  return (
-    <FlatList
-      data={visible}
-      keyExtractor={(item) => item.id}
-      renderItem={renderItem}
-      ListHeaderComponent={
-        members.length > 0 ? (
-          <View style={{ paddingHorizontal: layout.gutter, paddingBottom: 10 }}>
-            <Field
-              placeholder="Search name, company or location"
-              value={search}
-              onChangeText={setSearch}
-              autoCapitalize="none"
-              autoCorrect={false}
-              returnKeyType="search"
-              clearButtonMode="while-editing"
-            />
-          </View>
-        ) : null
-      }
-      ListEmptyComponent={empty}
-      ItemSeparatorComponent={Divider}
-      contentContainerStyle={{ paddingBottom: 24 }}
-      keyboardShouldPersistTaps="handled"
-      refreshControl={
-        <RefreshControl
-          refreshing={isFetching && !isPending}
-          onRefresh={() => void refetch()}
-          tintColor={p.muted}
-          colors={[p.accent]}
-        />
-      }
-    />
-  )
-}
-
 /* --------------------------------------------------------------- screen */
 
 type ChatTab = "channels" | "people"
@@ -398,7 +264,7 @@ export default function ChatScreen() {
         <SegmentedControl options={SEGMENTS} value={tab} onChange={setTab} />
       </View>
       {tab === "people" ? (
-        <PeopleSegment onOpen={openPerson} />
+        <PeopleList onOpen={openPerson} />
       ) : (
         <ChannelsSegment
           summaries={summaries}
