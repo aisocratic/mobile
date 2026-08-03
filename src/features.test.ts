@@ -17,10 +17,10 @@ afterEach(() => {
 })
 
 describe("first-release defaults", () => {
-  it("ships feed, events, chat and profile, and holds connections back", () => {
+  it("ships feed, blog, events, chat and profile, and holds connections back", () => {
     const f = loadFeatures()
 
-    expect(f.enabledFeatures().sort()).toEqual(["chat", "events", "feed", "profile"].sort())
+    expect(f.enabledFeatures().sort()).toEqual(["blog", "chat", "events", "feed", "profile"].sort())
     // Chat's own People segment reads the same directory without needing
     // event_attendance, so the standalone tab is redundant rather than needed.
     expect(f.isEnabled("connections")).toBe(false)
@@ -76,24 +76,24 @@ describe("homeRoute", () => {
   it("follows the flags instead of naming a tab", () => {
     // The whole point: switching off the landing tab must not strand the app on
     // a screen this build doesn't ship.
-    expect(loadFeatures("-feed").homeRoute()).toBe("/(tabs)/events")
-    // Connections is off by default, so with feed and events gone too it's
-    // chat's turn, not connections'.
-    expect(loadFeatures("-feed,-events").homeRoute()).toBe("/(tabs)/chat")
+    expect(loadFeatures("-feed").homeRoute()).toBe("/(tabs)/blog")
+    // Connections is off by default, so with the reading tabs and events gone
+    // it's chat's turn, not connections'.
+    expect(loadFeatures("-feed,-blog,-events").homeRoute()).toBe("/(tabs)/chat")
   })
 
   it("falls back to profile when every content tab is off", () => {
-    expect(loadFeatures("-feed,-events,-chat").homeRoute()).toBe("/(tabs)/profile")
+    expect(loadFeatures("-feed,-blog,-events,-chat").homeRoute()).toBe("/(tabs)/profile")
   })
 
   it("falls further back to connections if even profile is off but it was turned on", () => {
-    expect(loadFeatures("-feed,-events,-chat,-profile,connections").homeRoute()).toBe(
+    expect(loadFeatures("-feed,-blog,-events,-chat,-profile,connections").homeRoute()).toBe(
       "/(tabs)/connections",
     )
   })
 
   it("never returns a route for a disabled feature", () => {
-    const f = loadFeatures("-feed,-events,-chat,-profile")
+    const f = loadFeatures("-feed,-blog,-events,-chat,-profile")
     // Everything off is a misconfiguration, but it must still resolve to a real
     // route rather than undefined — a blank redirect target hangs the app.
     expect(f.homeRoute()).toMatch(/^\/\(tabs\)\//)

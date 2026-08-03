@@ -133,7 +133,8 @@ Which sections exist in a build is a flag, not a branch — see `src/features.ts
 
 | Section | First release | Notes |
 | --- | --- | --- |
-| Feed | ✅ | Landing tab |
+| Feed | ✅ | Landing tab; news only |
+| Blog | ✅ | Essays and monthly digests; same screen as Feed with a different source |
 | Events | ✅ | |
 | Chat | ✅ | Channels + a **People** segment: the community directory, one tap from a DM |
 | Profile | ✅ | Holds sign-out; on by default so nobody is stranded signed in |
@@ -169,13 +170,15 @@ One deliberate constraint: `process.env.EXPO_PUBLIC_*` is *inlined by Metro at b
 > GOTRUE_URI_ALLOW_LIST: ${GOTRUE_URI_ALLOW_LIST:-https://aisocratic.org/**,http://localhost:**,aisocratic://**}
 > ```
 >
-> **✅ Applied to production on 2026-08-02.** The live value is now:
+> **✅ Applied to production on 2026-08-02** (`aisocratic://**`) **and 2026-08-03** (`exp://**`). The live value is now:
 >
 > ```
-> GOTRUE_URI_ALLOW_LIST=https://aisocratic.org/**,https://meet.aisocratic.org/**,http://localhost:**,aisocratic://**
+> GOTRUE_URI_ALLOW_LIST=https://aisocratic.org/**,https://meet.aisocratic.org/**,http://localhost:**,aisocratic://**,exp://**
 > ```
 >
-> The compose default was **not** what governed this. Production sets the variable explicitly at **`/opt/aisocratic/.env:50`**, which overrides `${VAR:-default}` — so that file is the one to edit, and the compose change alone would have been a no-op. A timestamped backup (`.env.bak-*-pre-mobile-oauth`) sits next to it, and the `auth` container was recreated. `exp://**` was deliberately left off; the development build removes the need for it.
+> The compose default was **not** what governed this. Production sets the variable explicitly at **`/opt/aisocratic/.env:50`**, which overrides `${VAR:-default}` — so that file is the one to edit, and the compose change alone would have been a no-op. Timestamped backups (`.env.bak-*-pre-mobile-oauth`, `.env.bak-*-pre-expo-go-oauth`) sit next to it, and the `auth` container was recreated each time.
+>
+> `exp://**` is what lets Google sign-in return to **Expo Go** — without it the browser finishes the login on aisocratic.org and the app never hears back. It's safe enough to leave (the PKCE code verifier never leaves the initiating device, so a hijacked redirect yields nothing exchangeable), but it exists for Expo Go testing only; once testing moves to the dev build, dropping it back off the list is one line and one `docker compose up -d auth`.
 >
 > Should this ever need redoing, per `website/DEPLOY.md` the stack is Docker Compose on Hetzner at `/opt/aisocratic`:
 >
@@ -220,15 +223,13 @@ That action is deliberately a normal in-flow button rather than a floating ✕. 
 
 Times are rendered in the **event's** timezone (rows carry an IANA `timezone`), not the device's.
 
-### Feed
-News and the blog are two tables but one reading surface. `src/api/feed.ts` normalises both into a single `FeedItem` and merges them newest-first; the tab carries two filter rows — source (**All / News / Blog**) and topic — and the topic row is the union of both sides' categories, deduplicated case-insensitively.
+### Feed & Blog
+Two tabs, one screen: `src/components/story-stream.tsx` renders a hero card, rows, a topic filter and pull-to-refresh for whichever `source` a tab hands it. **Feed** is the news; **Blog** is the essays and monthly digests. They used to share one tab behind a source filter (All / News / Blog), which buried the news whenever a long-form post outdated it.
 
-- `updates` table — the website renamed this surface to "News" in July 2026 but the table kept its old name. Paged 20 at a time, category filtered server-side; link-only items open their source directly instead of an empty reader.
-- `blog_posts` table — 31 posts, fetched whole and filtered client-side, read through the in-house markdown renderer.
+- `updates` table (Feed) — the website renamed this surface to "News" in July 2026 but the table kept its old name. Paged 20 at a time, category filtered server-side; link-only items open their source directly instead of an empty reader.
+- `blog_posts` table (Blog) — 31 posts, fetched whole and filtered client-side, read through the in-house markdown renderer.
 
-The two paginate differently, which the merge has to absorb: the blog arrives in one request while news is paged, so a blog post older than the last loaded news item is held back until news catches up with it. Without that cutoff every new page of news would insert rows *above* posts the reader had already scrolled past.
-
-Selecting **News** or **Blog** disables the other query rather than filtering its results, so a single-source view costs a single request. The top item renders as a hero card; the rest as rows tagged with their source.
+`src/api/feed.ts` still normalises both tables into a single `FeedItem` and can merge them — each tab just asks for one source, which disables the other query entirely, so a tab costs a single request. The merge path (and its held-back-blog-post cutoff for mixed pagination) stays for any future combined view.
 
 ### Connections
 The list of people you've met at AI Socratic events, with the role each of you had — **host** or **guest**.

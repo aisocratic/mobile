@@ -64,6 +64,14 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="blog"
+        options={{
+          title: "Blog",
+          href: href(isEnabled("blog")),
+          tabBarIcon: ({ color, size }) => <Ionicons name="book" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="events"
         options={{
           title: "Events",

@@ -3,8 +3,6 @@ import { Image } from "expo-image"
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ActivityIndicator,
-  Animated,
-  Easing,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -18,7 +16,6 @@ import {
 
 import { FadeIn } from "@/components/fade-in"
 import { fire, Touchable } from "@/components/touchable"
-import { useMayAnimate } from "@/lib/reduce-motion"
 import { layout, motion, space, usePalette, type as typeScale } from "@/theme"
 
 /* ------------------------------------------------------------------ text */
@@ -289,20 +286,10 @@ export function Chip({ label, tone }: { label: string; tone?: "accent" | "muted"
 type Measured = { x: number; width: number; height: number }
 
 /**
- * A horizontal filter bar whose selection *travels* between options rather
- * than blinking from one to the next.
- *
- * The pill is a single view behind the labels, animated to the measured frame
- * of whichever option is selected. That costs a layout pass per option, but it
- * buys the thing that makes the control feel native: you can see where the
- * selection went, so changing a filter reads as moving through one list rather
- * than being handed a different one. The selected option is also scrolled into
- * view, which matters on Feed where the topic row runs well past the screen.
- *
- * Width and position can't ride the native driver, so this animates on the JS
- * thread — a single small view for ~260ms, which is nothing, and the
- * alternative (`scaleX` on a fixed-width pill) distorts the pill's corner
- * radius as it moves.
+ * A horizontal filter bar. The selection changes instantly — this control used
+ * to slide a pill between options, and on a row you retap several times in a
+ * row the travel read as lag, not polish. Frames are still measured, but only
+ * to keep the selected chip scrolled into view on rows wider than the screen.
  */
 export function SegmentedControl<T extends string>({
   options,
@@ -314,16 +301,8 @@ export function SegmentedControl<T extends string>({
   onChange: (v: T) => void
 }) {
   const p = usePalette()
-  const mayAnimate = useMayAnimate()
   const scroller = useRef<ScrollView>(null)
   const [frames, setFrames] = useState<Record<string, Measured>>({})
-
-  const left = useRef(new Animated.Value(0)).current
-  const width = useRef(new Animated.Value(0)).current
-  // Until the first frame is measured the pill has no width, so it must not be
-  // painted — a zero-width rounded rect at x=0 is a visible speck.
-  const opacity = useRef(new Animated.Value(0)).current
-  const placed = useRef(false)
 
   const onLayoutOption = useCallback((key: string, frame: Measured) => {
     setFrames((prev) => {
@@ -335,47 +314,15 @@ export function SegmentedControl<T extends string>({
 
   const target = frames[value]
 
-  useEffect(() => {
-    if (!target) return
-
-    if (!placed.current || !mayAnimate) {
-      // First placement, or Reduce Motion: be where you belong immediately.
-      placed.current = true
-      left.setValue(target.x)
-      width.setValue(target.width)
-      opacity.setValue(1)
-      return
-    }
-
-    const animation = Animated.parallel([
-      Animated.timing(left, {
-        toValue: target.x,
-        duration: motion.base,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: false,
-      }),
-      Animated.timing(width, {
-        toValue: target.width,
-        duration: motion.base,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: false,
-      }),
-    ])
-    animation.start()
-    return () => animation.stop()
-  }, [target, mayAnimate, left, width, opacity])
-
   // Keep the selection reachable: on Feed the topic list is far wider than the
   // screen, and selecting the last chip used to leave it half off the edge.
   useEffect(() => {
     if (!target) return
     scroller.current?.scrollTo({
       x: Math.max(0, target.x - layout.gutter * 2),
-      animated: mayAnimate,
+      animated: false,
     })
-  }, [target, mayAnimate])
-
-  const height = target?.height ?? 0
+  }, [target])
 
   return (
     <ScrollView
@@ -384,19 +331,6 @@ export function SegmentedControl<T extends string>({
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={{ gap: space.sm, paddingHorizontal: layout.gutter }}
     >
-      <Animated.View
-        pointerEvents="none"
-        style={{
-          position: "absolute",
-          left,
-          width,
-          height,
-          opacity,
-          top: 0,
-          borderRadius: layout.radiusPill,
-          backgroundColor: p.primary,
-        }}
-      />
       {options.map((o) => {
         const active = o.value === value
         return (
@@ -416,11 +350,9 @@ export function SegmentedControl<T extends string>({
               paddingHorizontal: space.md + space.hair,
               paddingVertical: space.sm,
               borderRadius: layout.radiusPill,
-              // The pill behind carries the selected fill; unselected options
-              // keep their own so the row still reads as a set of controls.
-              backgroundColor: active ? "transparent" : p.input,
+              backgroundColor: active ? p.primary : p.input,
               borderWidth: StyleSheet.hairlineWidth,
-              borderColor: active ? "transparent" : p.border,
+              borderColor: active ? p.primary : p.border,
             }}
           >
             <Txt variant="label" color={active ? p.primaryText : p.muted}>

@@ -1,7 +1,7 @@
 /**
  * Feature flags — which sections of the app exist in this build.
  *
- * The first release ships Feed, Events, Chat and Profile. Chat's tab now
+ * The first release ships Feed, Blog, Events, Chat and Profile. Chat's tab now
  * carries its own member directory (the People segment), so the standalone
  * Connections tab is folded away: it read from `event_attendance`, a table RLS
  * scopes to rows you already share, and the same "who else is here" job is
@@ -30,7 +30,7 @@
  * adding a feature later does not mean editing every deployment's env.
  */
 
-export const FEATURES = ["feed", "events", "connections", "chat", "profile"] as const
+export const FEATURES = ["feed", "blog", "events", "connections", "chat", "profile"] as const
 
 export type FeatureName = (typeof FEATURES)[number]
 
@@ -43,6 +43,9 @@ export type FeatureName = (typeof FEATURES)[number]
  */
 const DEFAULTS: Record<FeatureName, boolean> = {
   feed: true,
+  // The blog got its own tab when Feed became news-only: two different kinds
+  // of reading, two different rhythms, one shared screen (StoryStream).
+  blog: true,
   events: true,
   profile: true,
   chat: true,
@@ -103,13 +106,14 @@ export function enabledFeatures(): FeatureName[] {
 
 /**
  * Tab order, which is also priority order: the first enabled one is where the
- * app opens. Feed leads because the news feed is the reason to open the app on
- * a given morning; Events and Chat are destinations you go looking for.
- * Connections sits last — off by default, and superseded by chat's own People
- * segment when it is on.
+ * app opens. Feed leads because the news is the reason to open the app on a
+ * given morning; Blog sits beside it as the other reading surface; Events and
+ * Chat are destinations you go looking for. Connections sits last — off by
+ * default, and superseded by chat's own People segment when it is on.
  */
 const TAB_ROUTES = [
   ["feed", "/(tabs)/feed"],
+  ["blog", "/(tabs)/blog"],
   ["events", "/(tabs)/events"],
   ["chat", "/(tabs)/chat"],
   ["profile", "/(tabs)/profile"],
