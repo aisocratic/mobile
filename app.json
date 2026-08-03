@@ -5,6 +5,7 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "scheme": "aisocratic",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "assetBundlePatterns": [
@@ -16,7 +17,11 @@
     },
     "android": {
       "package": "org.aisocratic.mobile",
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0A0A0A"
+      }
     },
     "web": {
       "bundler": "metro",
@@ -28,6 +33,7 @@
       [
         "expo-splash-screen",
         {
+          "image": "./assets/splash-icon.png",
           "backgroundColor": "#0A0A0A",
           "resizeMode": "contain",
           "imageWidth": 160
