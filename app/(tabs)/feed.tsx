@@ -100,14 +100,25 @@ function Stat({ icon, value }: { icon: keyof typeof Ionicons.glyphMap; value: nu
   )
 }
 
-function Hero({ item, onPress }: { item: FeedItem; onPress: () => void }) {
+/**
+ * Memoized so a screen-level re-render (filter chips, refetch state,
+ * scrolling near the end) doesn't redo this work for every mounted row —
+ * only rows whose own `item`/`onPress` actually changed re-render.
+ */
+const Hero = React.memo(function Hero({
+  item,
+  onPress,
+}: {
+  item: FeedItem
+  onPress: (item: FeedItem) => void
+}) {
   const p = usePalette()
 
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={item.title ?? "Untitled"}
-      onPress={onPress}
+      onPress={() => onPress(item)}
       style={({ pressed }) => ({ opacity: pressed ? 0.9 : 1, paddingHorizontal: layout.gutter })}
     >
       <View
@@ -200,16 +211,22 @@ function Hero({ item, onPress }: { item: FeedItem; onPress: () => void }) {
       </View>
     </Pressable>
   )
-}
+})
 
-function Row({ item, onPress }: { item: FeedItem; onPress: () => void }) {
+const Row = React.memo(function Row({
+  item,
+  onPress,
+}: {
+  item: FeedItem
+  onPress: (item: FeedItem) => void
+}) {
   const p = usePalette()
 
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={item.title ?? "Untitled"}
-      onPress={onPress}
+      onPress={() => onPress(item)}
       style={({ pressed }) => ({
         flexDirection: "row",
         gap: 14,
@@ -274,7 +291,7 @@ function Row({ item, onPress }: { item: FeedItem; onPress: () => void }) {
       </View>
     </Pressable>
   )
-}
+})
 
 function RowSeparator() {
   const p = usePalette()
@@ -289,6 +306,89 @@ function RowSeparator() {
     />
   )
 }
+
+/**
+ * The masthead carries a background video (see `FeedMasthead`), so it matters
+ * that this stays the *same* element across re-renders rather than a freshly
+ * built one each time — passed inline, `ListHeaderComponent` would otherwise be
+ * a brand-new subtree (new `Hero` onPress closure, new "More stories" count
+ * view) on every keystroke-equivalent re-render of the screen, which is wasted
+ * work even when nothing it needs actually changed. Memoizing on the few
+ * primitives that genuinely describe its content keeps it inert the rest of
+ * the time.
+ */
+const FeedListHeader = React.memo(function FeedListHeader({
+  featured,
+  moreCount,
+  onPressItem,
+}: {
+  featured: FeedItem | null
+  moreCount: number
+  onPressItem: (item: FeedItem) => void
+}) {
+  const p = usePalette()
+
+  return (
+    // The masthead renders whether or not there is a featured story — an
+    // empty feed should still look like the app, not like a blank.
+    <View style={{ gap: 20, paddingBottom: moreCount ? 4 : 0 }}>
+      <FeedMasthead />
+      {featured ? <Hero item={featured} onPress={onPressItem} /> : null}
+      {moreCount ? (
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+            paddingHorizontal: layout.gutter,
+          }}
+        >
+          <Txt variant="label" color={p.muted} style={{ textTransform: "uppercase", letterSpacing: 1 }}>
+            More stories
+          </Txt>
+          <Muted>{moreCount}</Muted>
+        </View>
+      ) : null}
+    </View>
+  )
+})
+
+const FeedListEmpty = React.memo(function FeedListEmpty({ category }: { category: string }) {
+  return (
+    <EmptyState
+      icon="newspaper-outline"
+      title={category === ALL ? "Nothing here yet" : `Nothing in ${category}`}
+      body={
+        category === ALL ? "News and essays land here. Pull to refresh." : "Try another topic or source."
+      }
+    />
+  )
+})
+
+const FeedListFooter = React.memo(function FeedListFooter({
+  isFetchingMore,
+  hasMore,
+}: {
+  isFetchingMore: boolean
+  hasMore: boolean
+}) {
+  const p = usePalette()
+
+  if (isFetchingMore) {
+    return (
+      <View style={{ paddingVertical: 24 }}>
+        <ActivityIndicator color={p.accent} />
+      </View>
+    )
+  }
+
+  if (hasMore) return <View style={{ height: 24 }} />
+
+  // Only once the feed is exhausted — the same place the website puts it.
+  // Mounting it mid-scroll would start the video download while there are
+  // still stories to read.
+  return <CommunityCta />
+})
 
 export default function FeedScreen() {
   const p = usePalette()
@@ -350,6 +450,15 @@ export default function FeedScreen() {
     </View>
   )
 
+  // Stable across renders so FlatList doesn't treat every screen re-render
+  // (filter chips, refetch state, pagination) as a reason to re-render every
+  // mounted row — only rows whose own `item` actually changed do.
+  const keyExtractor = useCallback((item: FeedItem) => item.key, [])
+  const renderItem = useCallback(
+    ({ item }: { item: FeedItem }) => <Row item={item} onPress={open} />,
+    [open],
+  )
+
   const body = () => {
     if (feed.isPending) return <Loading label="Loading the feed…" />
     // One source failing while the other loaded still leaves a usable feed —
@@ -365,12 +474,14 @@ export default function FeedScreen() {
         ref={listRef}
         style={{ flex: 1 }}
         data={rest}
-        keyExtractor={(item) => item.key}
-        renderItem={({ item }) => <Row item={item} onPress={() => open(item)} />}
+        keyExtractor={keyExtractor}
+        renderItem={renderItem}
         ItemSeparatorComponent={RowSeparator}
         onEndReached={feed.loadMore}
         onEndReachedThreshold={0.6}
         initialNumToRender={8}
+        maxToRenderPerBatch={8}
+        windowSize={7}
         contentContainerStyle={{ paddingBottom: 40, flexGrow: feed.items.length ? undefined : 1 }}
         refreshControl={
           <RefreshControl
@@ -380,58 +491,11 @@ export default function FeedScreen() {
           />
         }
         ListHeaderComponent={
-          // The masthead renders whether or not there is a featured story —
-          // an empty feed should still look like the app, not like a blank.
-          <View style={{ gap: 20, paddingBottom: rest.length ? 4 : 0 }}>
-            <FeedMasthead />
-            {featured ? <Hero item={featured} onPress={() => open(featured)} /> : null}
-            {rest.length ? (
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  paddingHorizontal: layout.gutter,
-                }}
-              >
-                <Txt
-                  variant="label"
-                  color={p.muted}
-                  style={{ textTransform: "uppercase", letterSpacing: 1 }}
-                >
-                  More stories
-                </Txt>
-                <Muted>{rest.length}</Muted>
-              </View>
-            ) : null}
-          </View>
+          <FeedListHeader featured={featured ?? null} moreCount={rest.length} onPressItem={open} />
         }
-        ListEmptyComponent={
-          featured ? null : (
-            <EmptyState
-              icon="newspaper-outline"
-              title={category === ALL ? "Nothing here yet" : `Nothing in ${category}`}
-              body={
-                category === ALL
-                  ? "News and essays land here. Pull to refresh."
-                  : "Try another topic or source."
-              }
-            />
-          )
-        }
+        ListEmptyComponent={featured ? null : <FeedListEmpty category={category} />}
         ListFooterComponent={
-          feed.isFetchingMore ? (
-            <View style={{ paddingVertical: 24 }}>
-              <ActivityIndicator color={p.accent} />
-            </View>
-          ) : feed.hasMore ? (
-            <View style={{ height: 24 }} />
-          ) : (
-            // Only once the feed is exhausted — the same place the website puts
-            // it. Mounting it mid-scroll would start the video download while
-            // there are still stories to read.
-            <CommunityCta />
-          )
+          <FeedListFooter isFetchingMore={feed.isFetchingMore} hasMore={feed.hasMore} />
         }
       />
     )
