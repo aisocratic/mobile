@@ -15,6 +15,14 @@ import { usePalette } from "@/theme"
  *
  * Declaration order is tab order. See `src/features.ts`.
  */
+
+// The root layout's ErrorBoundary already covers the whole app, but it sits
+// above the tab bar — if it were the only one, a crash while reading a
+// Feed story would take the tab bar down with it and strand the tester on a
+// full-screen error with no way to switch to Chat or Profile and carry on.
+// A boundary here catches a screen crashing before that Stack/Tabs frame
+// unmounts, so the bar stays put and the rest of the app is still usable.
+export { ErrorBoundary } from "@/components/error-boundary"
 export default function TabsLayout() {
   const p = usePalette()
   const chat = isEnabled("chat")

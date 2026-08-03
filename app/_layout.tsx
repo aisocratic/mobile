@@ -11,6 +11,12 @@ import { queryClient } from "@/lib/query"
 import { AuthProvider, useAuth } from "@/store/auth"
 import { usePalette, useIsDark } from "@/theme"
 
+// expo-router renders this in place of the whole route when RootLayout below
+// throws, so it covers every screen in the app — see
+// src/components/error-boundary.tsx for why it doesn't assume any of the
+// providers below are mounted.
+export { ErrorBoundary } from "@/components/error-boundary"
+
 /**
  * Events, news and the blog are public on aisocratic.org, so they stay
  * browsable without an account. Only the surfaces that are about *you* need a
