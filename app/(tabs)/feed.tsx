@@ -4,12 +4,14 @@ import { LinearGradient } from "expo-linear-gradient"
 import { useRouter } from "expo-router"
 import * as WebBrowser from "expo-web-browser"
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, View } from "react-native"
+import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, View } from "react-native"
 
 import { authorLine, readingTime } from "@/api/blog"
 import { ALL, useFeed, type FeedItem, type SourceFilter } from "@/api/feed"
 import { CommunityCta } from "@/components/community-cta"
+import { FadeIn } from "@/components/fade-in"
 import { FeedMasthead } from "@/components/feed-masthead"
+import { Touchable } from "@/components/touchable"
 import {
   Avatar,
   Divider,
@@ -18,12 +20,13 @@ import {
   Loading,
   Muted,
   Screen,
+  SectionLabel,
   SegmentedControl,
   Txt,
 } from "@/components/ui"
 import { formatDay, timeAgo } from "@/lib/format"
 import { useAuth } from "@/store/auth"
-import { layout, usePalette } from "@/theme"
+import { layout, motion, space, usePalette } from "@/theme"
 
 const SOURCES: { value: SourceFilter; label: string }[] = [
   { value: ALL, label: "All" },
@@ -57,7 +60,9 @@ function MetaLine({ item, compact }: { item: FeedItem; compact?: boolean }) {
   ].filter((v): v is string => !!v)
 
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+    <View
+      style={{ flexDirection: "row", alignItems: "center", gap: space.xs + space.hair, flexWrap: "wrap" }}
+    >
       {parts.map((part, i) => (
         <React.Fragment key={part + i}>
           {i > 0 ? <Dot /> : null}
@@ -76,7 +81,7 @@ function Eyebrow({ item }: { item: FeedItem }) {
   const label = item.category ?? (item.source === "blog" ? "Blog" : "News")
 
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 5, flex: 1 }}>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: space.xs + 1, flex: 1 }}>
       <Ionicons name={SOURCE_ICON[item.source]} size={11} color={p.accent} />
       <Txt
         variant="caption"
@@ -93,7 +98,7 @@ function Eyebrow({ item }: { item: FeedItem }) {
 function Stat({ icon, value }: { icon: keyof typeof Ionicons.glyphMap; value: number }) {
   const p = usePalette()
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: space.xs - 1 }}>
       <Ionicons name={icon} size={12} color={p.muted} />
       <Muted>{value}</Muted>
     </View>
@@ -115,11 +120,14 @@ const Hero = React.memo(function Hero({
   const p = usePalette()
 
   return (
-    <Pressable
+    <Touchable
       accessibilityRole="button"
       accessibilityLabel={item.title ?? "Untitled"}
       onPress={() => onPress(item)}
-      style={({ pressed }) => ({ opacity: pressed ? 0.9 : 1, paddingHorizontal: layout.gutter })}
+      // Shallower than a list row: a near-full-width card scaling by the usual
+      // amount travels a lot of pixels and reads as the whole screen flinching.
+      scale={0.985}
+      style={{ paddingHorizontal: layout.gutter }}
     >
       <View
         style={{
@@ -136,7 +144,8 @@ const Hero = React.memo(function Hero({
               source={{ uri: item.cover }}
               style={{ width: "100%", height: "100%" }}
               contentFit="cover"
-              transition={180}
+              transition={motion.image}
+              cachePolicy="memory-disk"
             />
           ) : null}
 
@@ -149,21 +158,21 @@ const Hero = React.memo(function Hero({
           <View
             style={{
               position: "absolute",
-              left: 14,
-              right: 14,
-              bottom: 12,
+              left: space.md + space.hair,
+              right: space.md + space.hair,
+              bottom: space.md,
               flexDirection: "row",
               alignItems: "center",
-              gap: 8,
+              gap: space.sm,
             }}
           >
             <View
               style={{
                 flexDirection: "row",
                 alignItems: "center",
-                gap: 5,
-                paddingHorizontal: 9,
-                paddingVertical: 4,
+                gap: space.xs + 1,
+                paddingHorizontal: space.sm + 1,
+                paddingVertical: space.xs,
                 borderRadius: layout.radiusPill,
                 backgroundColor: "rgba(255,255,255,0.16)",
               }}
@@ -190,16 +199,23 @@ const Hero = React.memo(function Hero({
           </View>
         </View>
 
-        <View style={{ padding: 16, gap: 8 }}>
-          <Txt variant="title" numberOfLines={3} style={{ lineHeight: 28 }}>
+        <View style={{ padding: space.lg, gap: space.sm }}>
+          <Txt variant="title" numberOfLines={3}>
             {item.title ?? "Untitled"}
           </Txt>
           {item.snippet ? (
-            <Txt variant="body" color={p.muted} numberOfLines={3} style={{ lineHeight: 21 }}>
+            <Txt variant="body" color={p.muted} numberOfLines={3}>
               {item.snippet}
             </Txt>
           ) : null}
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 2 }}>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: space.sm + space.hair,
+              marginTop: space.hair,
+            }}
+          >
             {/* Most news rows are unbylined — an initials bubble reading "?"
                 is worse than no bubble. */}
             {item.authors?.[0] ? <Avatar name={item.authors[0]} size={28} /> : null}
@@ -209,7 +225,7 @@ const Hero = React.memo(function Hero({
           </View>
         </View>
       </View>
-    </Pressable>
+    </Touchable>
   )
 })
 
@@ -223,17 +239,16 @@ const Row = React.memo(function Row({
   const p = usePalette()
 
   return (
-    <Pressable
+    <Touchable
       accessibilityRole="button"
       accessibilityLabel={item.title ?? "Untitled"}
       onPress={() => onPress(item)}
-      style={({ pressed }) => ({
+      style={{
         flexDirection: "row",
-        gap: 14,
+        gap: space.lg,
         paddingHorizontal: layout.gutter,
-        paddingVertical: 16,
-        opacity: pressed ? 0.7 : 1,
-      })}
+        paddingVertical: space.lg,
+      }}
     >
       <View
         style={{
@@ -249,7 +264,8 @@ const Row = React.memo(function Row({
             source={{ uri: item.thumb }}
             style={{ width: "100%", height: "100%" }}
             contentFit="cover"
-            transition={150}
+            transition={motion.image}
+            cachePolicy="memory-disk"
           />
         ) : (
           <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
@@ -262,26 +278,22 @@ const Row = React.memo(function Row({
         )}
       </View>
 
-      <View style={{ flex: 1, gap: 5 }}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+      <View style={{ flex: 1, gap: space.xs + 1 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
           <Eyebrow item={item} />
           {item.externalLink ? <Ionicons name="open-outline" size={12} color={p.muted} /> : null}
         </View>
 
-        <Txt variant="heading" numberOfLines={2} style={{ lineHeight: 22 }}>
+        <Txt variant="heading" numberOfLines={2}>
           {item.title ?? "Untitled"}
         </Txt>
 
-        {item.snippet ? (
-          <Muted numberOfLines={2} style={{ lineHeight: 17 }}>
-            {item.snippet}
-          </Muted>
-        ) : null}
+        {item.snippet ? <Muted numberOfLines={2}>{item.snippet}</Muted> : null}
 
         <MetaLine item={item} compact />
 
         {item.likeCount > 0 || item.commentCount > 0 ? (
-          <View style={{ flexDirection: "row", gap: 12, marginTop: 2 }}>
+          <View style={{ flexDirection: "row", gap: space.md, marginTop: space.hair }}>
             {item.likeCount > 0 ? <Stat icon="heart-outline" value={item.likeCount} /> : null}
             {item.commentCount > 0 ? (
               <Stat icon="chatbubble-outline" value={item.commentCount} />
@@ -289,22 +301,13 @@ const Row = React.memo(function Row({
           </View>
         ) : null}
       </View>
-    </Pressable>
+    </Touchable>
   )
 })
 
+/** Indented past the thumbnail so the rule reads as an editorial column. */
 function RowSeparator() {
-  const p = usePalette()
-  return (
-    <View
-      style={{
-        height: StyleSheet.hairlineWidth,
-        backgroundColor: p.border,
-        // Indent past the thumbnail so the rule reads as an editorial column.
-        marginLeft: layout.gutter + THUMB + 14,
-      }}
-    />
-  )
+  return <Divider inset={layout.gutter + THUMB + space.lg} />
 }
 
 /**
@@ -326,14 +329,16 @@ const FeedListHeader = React.memo(function FeedListHeader({
   moreCount: number
   onPressItem: (item: FeedItem) => void
 }) {
-  const p = usePalette()
-
   return (
     // The masthead renders whether or not there is a featured story — an
     // empty feed should still look like the app, not like a blank.
-    <View style={{ gap: 20, paddingBottom: moreCount ? 4 : 0 }}>
+    <View style={{ gap: space.xl, paddingBottom: moreCount ? space.xs : 0 }}>
       <FeedMasthead />
-      {featured ? <Hero item={featured} onPress={onPressItem} /> : null}
+      {featured ? (
+        <FadeIn delay={motion.stagger * 2}>
+          <Hero item={featured} onPress={onPressItem} />
+        </FadeIn>
+      ) : null}
       {moreCount ? (
         <View
           style={{
@@ -343,9 +348,7 @@ const FeedListHeader = React.memo(function FeedListHeader({
             paddingHorizontal: layout.gutter,
           }}
         >
-          <Txt variant="label" color={p.muted} style={{ textTransform: "uppercase", letterSpacing: 1 }}>
-            More stories
-          </Txt>
+          <SectionLabel>More stories</SectionLabel>
           <Muted>{moreCount}</Muted>
         </View>
       ) : null}
@@ -376,13 +379,13 @@ const FeedListFooter = React.memo(function FeedListFooter({
 
   if (isFetchingMore) {
     return (
-      <View style={{ paddingVertical: 24 }}>
+      <View style={{ paddingVertical: space.xxl - space.xs }}>
         <ActivityIndicator color={p.accent} />
       </View>
     )
   }
 
-  if (hasMore) return <View style={{ height: 24 }} />
+  if (hasMore) return <View style={{ height: space.xxl - space.xs }} />
 
   // Only once the feed is exhausted — the same place the website puts it.
   // Mounting it mid-scroll would start the video download while there are
@@ -413,17 +416,26 @@ export default function FeedScreen() {
     if (category !== ALL && !feed.categories.includes(category)) setCategory(ALL)
   }, [feed.categories, category])
 
-  const toTop = () => listRef.current?.scrollToOffset({ offset: 0, animated: false })
+  const toTop = useCallback(
+    () => listRef.current?.scrollToOffset({ offset: 0, animated: false }),
+    [],
+  )
 
-  const onSource = (value: SourceFilter) => {
-    setSource(value)
-    toTop()
-  }
+  const onSource = useCallback(
+    (value: SourceFilter) => {
+      setSource(value)
+      toTop()
+    },
+    [toTop],
+  )
 
-  const onCategory = (value: string) => {
-    setCategory(value)
-    toTop()
-  }
+  const onCategory = useCallback(
+    (value: string) => {
+      setCategory(value)
+      toTop()
+    },
+    [toTop],
+  )
 
   const open = useCallback(
     (item: FeedItem) => {
@@ -441,22 +453,34 @@ export default function FeedScreen() {
     [router],
   )
 
-  const filters = (
-    <View style={{ gap: 8, paddingTop: 12, paddingBottom: 12 }}>
-      <SegmentedControl options={SOURCES} value={source} onChange={onSource} />
-      {categoryOptions.length > 1 ? (
-        <SegmentedControl options={categoryOptions} value={category} onChange={onCategory} />
-      ) : null}
-    </View>
-  )
-
   // Stable across renders so FlatList doesn't treat every screen re-render
   // (filter chips, refetch state, pagination) as a reason to re-render every
   // mounted row — only rows whose own `item` actually changed do.
   const keyExtractor = useCallback((item: FeedItem) => item.key, [])
   const renderItem = useCallback(
-    ({ item }: { item: FeedItem }) => <Row item={item} onPress={open} />,
+    ({ item, index }: { item: FeedItem; index: number }) => {
+      const row = <Row item={item} onPress={open} />
+      // Only the first screenful arrives staggered. Wrapping every row would
+      // mean each one fades in as you scroll onto it, which reads as the list
+      // struggling to keep up rather than as an entrance.
+      return index < motion.staggerCap ? (
+        <FadeIn index={index} offset={space.sm}>
+          {row}
+        </FadeIn>
+      ) : (
+        row
+      )
+    },
     [open],
+  )
+
+  const filters = (
+    <View style={{ gap: space.sm, paddingTop: space.md, paddingBottom: space.md }}>
+      <SegmentedControl options={SOURCES} value={source} onChange={onSource} />
+      {categoryOptions.length > 1 ? (
+        <SegmentedControl options={categoryOptions} value={category} onChange={onCategory} />
+      ) : null}
+    </View>
   )
 
   const body = () => {
@@ -482,7 +506,10 @@ export default function FeedScreen() {
         initialNumToRender={8}
         maxToRenderPerBatch={8}
         windowSize={7}
-        contentContainerStyle={{ paddingBottom: 40, flexGrow: feed.items.length ? undefined : 1 }}
+        contentContainerStyle={{
+          paddingBottom: space.xxxl,
+          flexGrow: feed.items.length ? undefined : 1,
+        }}
         refreshControl={
           <RefreshControl
             refreshing={feed.isRefetching}

@@ -87,20 +87,43 @@ src/
   chat/                       # Nostr chat adapter (see below)
   components/
     ui.tsx                    # design system: Txt, Card, Button, Field, Chip, Avatar, states…
+    touchable.tsx             # the app's one press interaction (scale + fade + haptics)
+    fade-in.tsx               # entrance animation, Reduce Motion aware
     markdown.tsx              # dependency-free markdown renderer for article bodies
     auth-form.tsx             # shared two-step passwordless form
+    error-boundary.tsx        # shared crash screen, mounted per route group
   lib/
     supabase.ts               # client + SecureStore-backed session storage
     query.ts                  # QueryClient
     format.ts                 # date/text helpers
+    reduce-motion.ts          # one shared Reduce Motion subscription for the app
   store/auth.tsx              # AuthProvider, useAuth()
-  theme.ts                    # brand palette, light + dark
+  theme.tsx                   # design tokens + ThemeProvider (see below)
   types.ts                    # row types transcribed from the live schema
 ```
 
 **Data flow.** Screens call hooks from `src/api/*`, which wrap TanStack Query around `supabase.from(...)` calls straight to PostgREST. There is no bespoke backend-for-frontend: the app is a first-class API client of the same database the website uses. Row Level Security is what separates public content from private.
 
 **Theming.** Every surface derives colour from `usePalette()`, which follows the OS light/dark setting. The palette is lifted from the website's design tokens — near-black `#0A0A0A` backgrounds with the amber accent (`#D97706` light / `#FBBF24` dark).
+
+`ThemeProvider` (mounted in `app/_layout.tsx`) holds the app's single `useColorScheme` subscription and everything below reads it through context. `usePalette` falls back to a direct, non-subscribing `Appearance` read when no provider is above it, which is what lets the crash screen render when the root layout itself is what threw.
+
+### Design tokens
+
+`src/theme.tsx` is the source of truth for more than colour, and screens are expected to reach for these rather than hand-picking numbers:
+
+| Token | What it settles |
+| --- | --- |
+| `space` | 4pt spacing scale (`xs` 4 → `huge` 56). Gaps, padding, margins |
+| `type` | Font size **and line height** per variant. Don't pass `lineHeight` at a call site unless you're also changing `fontSize` |
+| `layout` | Screen gutter and corner radii |
+| `motion` | Durations, the press scale, the stagger rhythm and its cap |
+
+**Motion.** Three pieces, and between them they cover everything that moves:
+
+- `Touchable` — the only press interaction in the app. A shallow scale plus a fade, driven natively, with optional haptics. Haptics are opt-in and stay off for navigation: a phone that buzzes on every row tap feels cheap, and iOS itself doesn't do it. `Button`, `IconButton` and moving a `SegmentedControl` selection are the exceptions.
+- `FadeIn` — entrances. Pass `index` and siblings arrive on the shared stagger rhythm, flattened past `motion.staggerCap` so a long list isn't still animating while you scroll it.
+- `useReduceMotion` / `useMayAnimate` — one probe and one OS listener for the whole app. Everything animated gates on it, and "don't know yet" means *don't animate and don't hide*, never `opacity: 0` while waiting for an answer.
 
 ---
 
@@ -397,4 +420,5 @@ Pointing at a different Buzz community is one line and no code change — `EXPO_
 - `@/*` path alias maps to `src/*`.
 - Screens stay presentational; all PostgREST access lives in `src/api/*`.
 - Every list handles loading, empty and error states explicitly — the shared `Loading`, `EmptyState` and `ErrorState` components exist so no screen ships a blank spinner.
+- Spacing comes from `space`, line height comes from `type`, and anything tappable is a `Touchable`. Hand-rolled `Pressable` press states are how the app ended up with ten different press opacities.
 - Production data is full of nulls. Assume every column is nullable and normalize at the API layer.

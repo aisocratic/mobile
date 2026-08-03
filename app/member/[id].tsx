@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons"
 import { Stack, useLocalSearchParams, useRouter } from "expo-router"
 import * as WebBrowser from "expo-web-browser"
 import React, { useCallback, useMemo } from "react"
-import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native"
+import { RefreshControl, ScrollView, StyleSheet, View } from "react-native"
 
 import { useConnections, useMemberProfile, type MemberProfile } from "@/api/connections"
 import {
@@ -19,7 +19,8 @@ import {
 } from "@/components/ui"
 import { isEnabled } from "@/features"
 import { formatDay, linkedinUrl as toLinkedin } from "@/lib/format"
-import { layout, usePalette } from "@/theme"
+import { Touchable } from "@/components/touchable"
+import { layout, space, usePalette } from "@/theme"
 import type { ConnectionRole, SharedEvent } from "@/types"
 
 /** event_users stores full URLs for most people, bare handles for a few. */
@@ -47,13 +48,13 @@ function SharedEventRow({
   const p = usePalette()
 
   return (
-    <Pressable
+    <Touchable
       accessibilityRole="button"
       accessibilityLabel={event.title ?? "Event"}
       onPress={() => onPress(event.eventId)}
-      style={({ pressed }) => [styles.eventRow, { opacity: pressed ? 0.6 : 1 }]}
+      style={styles.eventRow}
     >
-      <View style={{ flex: 1, gap: 6 }}>
+      <View style={{ flex: 1, gap: space.xs + space.hair }}>
         <Txt variant="heading" numberOfLines={2}>
           {event.title ?? "Untitled event"}
         </Txt>
@@ -74,8 +75,8 @@ function SharedEventRow({
         </View>
       </View>
 
-      <Ionicons name="chevron-forward" size={16} color={p.border} style={{ marginTop: 4 }} />
-    </Pressable>
+      <Ionicons name="chevron-forward" size={16} color={p.border} style={{ marginTop: space.xs }} />
+    </Touchable>
   )
 }
 
@@ -272,7 +273,7 @@ export default function MemberScreen() {
 
         {profile.headline && profile.headline !== affiliation ? (
           <View style={styles.block}>
-            <Txt variant="body" color={p.muted} style={{ lineHeight: 22 }}>
+            <Txt variant="body" color={p.muted}>
               {profile.headline}
             </Txt>
           </View>
@@ -283,7 +284,7 @@ export default function MemberScreen() {
             <Txt variant="label" color={p.muted}>
               ABOUT
             </Txt>
-            <Txt variant="body" style={{ lineHeight: 22 }}>
+            <Txt variant="body">
               {profile.bio}
             </Txt>
           </View>
@@ -320,7 +321,7 @@ export default function MemberScreen() {
             <Loading />
           ) : (
             <Card>
-              <Txt variant="body" color={p.muted} style={{ lineHeight: 21 }}>
+              <Txt variant="body" color={p.muted}>
                 We couldn&apos;t match any events you both attended. Shared events show up once your
                 account is linked to the email you registered with.
               </Txt>
@@ -334,55 +335,55 @@ export default function MemberScreen() {
 
 const styles = StyleSheet.create({
   content: {
-    paddingBottom: 48,
-    gap: 20,
+    paddingBottom: space.xxxl + space.sm,
+    gap: space.xl,
   },
   hero: {
     alignItems: "center",
-    gap: 14,
-    paddingTop: 20,
+    gap: space.lg,
+    paddingTop: space.xl,
     paddingHorizontal: layout.gutter,
   },
   heroText: {
     alignItems: "center",
-    gap: 5,
+    gap: space.xs + 1,
   },
   locationRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    marginTop: 2,
+    gap: space.xs,
+    marginTop: space.hair,
   },
   actions: {
     flexDirection: "row",
-    gap: 10,
+    gap: space.sm + space.hair,
     paddingHorizontal: layout.gutter,
   },
   socials: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 10,
+    gap: space.sm + space.hair,
     paddingHorizontal: layout.gutter,
   },
   block: {
     paddingHorizontal: layout.gutter,
-    gap: 8,
+    gap: space.sm,
   },
   chips: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 8,
+    gap: space.sm,
   },
   eventRow: {
     flexDirection: "row",
     alignItems: "flex-start",
-    gap: 12,
-    padding: 16,
+    gap: space.md,
+    padding: space.lg,
   },
   roleRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 8,
-    marginTop: 2,
+    gap: space.sm,
+    marginTop: space.hair,
   },
 })

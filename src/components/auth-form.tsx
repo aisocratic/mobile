@@ -1,11 +1,11 @@
 import { Ionicons } from "@expo/vector-icons"
-import * as Haptics from "expo-haptics"
 import React, { useCallback, useRef, useState } from "react"
 import { Pressable, View } from "react-native"
 
+import { fire } from "@/components/touchable"
 import { Button, Field, Txt } from "@/components/ui"
 import { useAuth } from "@/store/auth"
-import { layout, usePalette } from "@/theme"
+import { layout, space, usePalette } from "@/theme"
 
 /**
  * The shared two-step passwordless form used by both sign-in and sign-up.
@@ -45,7 +45,7 @@ export function AuthForm({ mode }: { mode: "sign-in" | "sign-up" }) {
       await sendCode(email, isSignUp ? name : undefined)
       lastSend.current = Date.now()
       setStep("code")
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
+      fire("success")
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not send the code.")
     } finally {
@@ -63,11 +63,11 @@ export function AuthForm({ mode }: { mode: "sign-in" | "sign-up" }) {
     setError(null)
     try {
       await verifyCode(email, code)
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
+      fire("success")
       // The auth listener in AuthProvider flips the session and the root
       // layout's AuthGate handles the redirect — nothing to navigate here.
     } catch (e) {
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)
+      fire("error")
       setError(e instanceof Error ? e.message : "That code didn't work.")
     } finally {
       setBusy(false)
@@ -110,7 +110,7 @@ export function AuthForm({ mode }: { mode: "sign-in" | "sign-up" }) {
       <View style={{ gap: 20 }}>
         <View style={{ gap: 6 }}>
           <Txt variant="title">Check your email</Txt>
-          <Txt variant="body" color={p.muted} style={{ lineHeight: 21 }}>
+          <Txt variant="body" color={p.muted} >
             We sent a 6-digit code to {email.trim().toLowerCase()}.
           </Txt>
         </View>
@@ -169,7 +169,7 @@ export function AuthForm({ mode }: { mode: "sign-in" | "sign-up" }) {
     <View style={{ gap: 20 }}>
       <View style={{ gap: 6 }}>
         <Txt variant="title">{isSignUp ? "Join AI Socratic" : "Welcome back"}</Txt>
-        <Txt variant="body" color={p.muted} style={{ lineHeight: 21 }}>
+        <Txt variant="body" color={p.muted} >
           {isSignUp
             ? "No passwords — we'll email you a code to get started."
             : "We'll email you a code. No password needed."}
@@ -226,7 +226,7 @@ export function AuthForm({ mode }: { mode: "sign-in" | "sign-up" }) {
       <Txt
         variant="caption"
         color={p.muted}
-        style={{ textAlign: "center", lineHeight: 18, marginTop: 4, paddingHorizontal: layout.gutter }}
+        style={{ textAlign: "center", marginTop: space.xs, paddingHorizontal: layout.gutter }}
       >
         By continuing you agree to the AI Socratic community guidelines.
       </Txt>

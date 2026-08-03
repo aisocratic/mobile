@@ -3,14 +3,23 @@ import { Image } from "expo-image"
 import { LinearGradient } from "expo-linear-gradient"
 import { useRouter } from "expo-router"
 import React, { useCallback, useMemo, useState } from "react"
-import { Pressable, RefreshControl, SectionList, StyleSheet, View } from "react-native"
+import { RefreshControl, SectionList, StyleSheet, View } from "react-native"
 
 import { eventCover, eventPlace, useEvents, type EventFilter } from "@/api/events"
-import { EmptyState, ErrorState, Loading, Screen, SegmentedControl, Txt } from "@/components/ui"
+import {
+  EmptyState,
+  ErrorState,
+  Loading,
+  Screen,
+  SectionLabel,
+  SegmentedControl,
+  Txt,
+} from "@/components/ui"
 import { EventsMasthead } from "@/components/events-masthead"
 import { FadeIn } from "@/components/fade-in"
+import { Touchable } from "@/components/touchable"
 import { formatEventTime, parseDate } from "@/lib/format"
-import { layout, usePalette, type Palette } from "@/theme"
+import { layout, motion, space, staggerDelay, usePalette, type Palette } from "@/theme"
 import type { EventRow } from "@/types"
 
 const FILTERS: { value: EventFilter; label: string }[] = [
@@ -20,12 +29,11 @@ const FILTERS: { value: EventFilter; label: string }[] = [
 
 const COVER_SIZE = 84
 
-/** Rows past this index render without delay — a long list scrolling in
- * staggered would feel laggy rather than composed. */
-const STAGGER_CAP = 8
-const STAGGER_STEP_MS = 55
-
 type Section = { title: string; data: EventRow[] }
+
+/** Hoisted so the list isn't handed a new style object on every render. */
+const LIST_CONTENT = { paddingBottom: space.xxxl }
+const keyExtractor = (item: EventRow) => item.id
 
 /** Rows arrive already sorted, so a single pass produces month sections. */
 function groupByMonth(events: EventRow[]): Section[] {
@@ -56,7 +64,7 @@ function Cover({ event, p }: { event: EventRow; p: Palette }) {
         source={{ uri }}
         style={styles.cover}
         contentFit="cover"
-        transition={180}
+        transition={motion.image}
         cachePolicy="memory-disk"
       />
     )
@@ -125,11 +133,11 @@ const EventCard = React.memo(function EventCard({
     : "Date TBA"
 
   return (
-    <Pressable
+    <Touchable
       accessibilityRole="button"
       accessibilityLabel={event.title ?? "Event"}
       onPress={() => onPress(event.id)}
-      style={({ pressed }) => [styles.row, { opacity: pressed ? 0.6 : 1 }]}
+      style={styles.row}
     >
       <Cover event={event} p={p} />
 
@@ -138,7 +146,7 @@ const EventCard = React.memo(function EventCard({
           {time ? `${day} · ${time}` : day}
         </Txt>
 
-        <Txt variant="heading" numberOfLines={2} style={{ lineHeight: 21 }}>
+        <Txt variant="heading" numberOfLines={2}>
           {event.title ?? "Untitled event"}
         </Txt>
 
@@ -172,8 +180,8 @@ const EventCard = React.memo(function EventCard({
         </View>
       </View>
 
-      <Ionicons name="chevron-forward" size={16} color={p.border} style={{ marginTop: 4 }} />
-    </Pressable>
+      <Ionicons name="chevron-forward" size={16} color={p.border} style={{ marginTop: space.xs }} />
+    </Touchable>
   )
 })
 
@@ -189,19 +197,43 @@ export default function EventsScreen() {
 
   // Delay by an event's position in the whole (unsectioned) list, so the
   // stagger reads top-to-bottom across month boundaries rather than
-  // restarting at zero in each section.
-  const staggerDelay = useMemo(() => {
-    const delays = new Map<string, number>()
+  // restarting at zero in each section. Rows past the cap are absent from the
+  // map and render undelayed — a long list still animating while you scroll it
+  // feels laggy rather than composed.
+  const delays = useMemo(() => {
+    const byId = new Map<string, number>()
     for (const [i, event] of (data ?? []).entries()) {
-      if (i >= STAGGER_CAP) break
-      delays.set(event.id, i * STAGGER_STEP_MS)
+      if (i >= motion.staggerCap) break
+      byId.set(event.id, staggerDelay(i))
     }
-    return delays
+    return byId
   }, [data])
 
   const open = useCallback(
     (id: string) => router.push({ pathname: "/event/[id]", params: { id } }),
     [router],
+  )
+
+  const renderItem = useCallback(
+    ({ item }: { item: EventRow }) => {
+      const delay = delays.get(item.id)
+      const card = <EventCard event={item} onPress={open} />
+      return delay === undefined ? card : <FadeIn delay={delay}>{card}</FadeIn>
+    },
+    [delays, open],
+  )
+
+  const renderSectionHeader = useCallback(
+    ({ section }: { section: Section }) => (
+      <View style={[styles.sectionHeader, { backgroundColor: p.background }]}>
+        <SectionLabel>{section.title}</SectionLabel>
+        <View style={[styles.sectionRule, { backgroundColor: p.border }]} />
+        <Txt variant="caption" color={p.muted}>
+          {section.data.length}
+        </Txt>
+      </View>
+    ),
+    [p.background, p.border, p.muted],
   )
 
   const empty = isPending ? (
@@ -222,9 +254,9 @@ export default function EventsScreen() {
     <Screen>
       <SectionList
         sections={sections}
-        keyExtractor={(item) => item.id}
+        keyExtractor={keyExtractor}
         stickySectionHeadersEnabled
-        contentContainerStyle={{ paddingBottom: 40 }}
+        contentContainerStyle={LIST_CONTENT}
         ListHeaderComponent={
           <View>
             <EventsMasthead />
@@ -233,22 +265,8 @@ export default function EventsScreen() {
             </View>
           </View>
         }
-        renderSectionHeader={({ section }) => (
-          <View style={[styles.sectionHeader, { backgroundColor: p.background }]}>
-            <Txt variant="label" color={p.muted} style={styles.sectionTitle}>
-              {section.title.toUpperCase()}
-            </Txt>
-            <View style={[styles.sectionRule, { backgroundColor: p.border }]} />
-            <Txt variant="caption" color={p.muted}>
-              {section.data.length}
-            </Txt>
-          </View>
-        )}
-        renderItem={({ item }) => {
-          const delay = staggerDelay.get(item.id)
-          const card = <EventCard event={item} onPress={open} />
-          return delay === undefined ? card : <FadeIn delay={delay}>{card}</FadeIn>
-        }}
+        renderSectionHeader={renderSectionHeader}
+        renderItem={renderItem}
         ListEmptyComponent={empty}
         refreshControl={
           <RefreshControl
@@ -268,20 +286,16 @@ export default function EventsScreen() {
 
 const styles = StyleSheet.create({
   header: {
-    paddingTop: 12,
-    paddingBottom: 4,
+    paddingTop: space.md,
+    paddingBottom: space.xs,
   },
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: space.sm + space.hair,
     paddingHorizontal: layout.gutter,
-    paddingTop: 18,
-    paddingBottom: 8,
-  },
-  sectionTitle: {
-    fontSize: 11,
-    letterSpacing: 1,
+    paddingTop: space.xl,
+    paddingBottom: space.sm,
   },
   sectionRule: {
     flex: 1,
@@ -290,13 +304,13 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     alignItems: "flex-start",
-    gap: 14,
+    gap: space.lg,
     paddingHorizontal: layout.gutter,
-    paddingVertical: 10,
+    paddingVertical: space.md,
   },
   rowBody: {
     flex: 1,
-    gap: 4,
+    gap: space.xs,
   },
   cover: {
     width: COVER_SIZE,
@@ -312,21 +326,21 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     flexWrap: "wrap",
-    gap: 10,
-    marginTop: 2,
+    gap: space.sm + space.hair,
+    marginTop: space.hair,
   },
   metaItem: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: space.xs,
     flexShrink: 1,
   },
   badge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
+    gap: space.xs,
+    paddingHorizontal: space.sm,
+    paddingVertical: space.hair,
     borderRadius: layout.radiusPill,
   },
   hostStack: {

@@ -1,9 +1,10 @@
 import { Ionicons } from "@expo/vector-icons"
 import { useRouter } from "expo-router"
 import React, { useCallback, useState } from "react"
-import { FlatList, Pressable, StyleSheet, View } from "react-native"
+import { FlatList, StyleSheet, View } from "react-native"
 
 import { Avatar, Divider, EmptyState, ErrorState, Loading, Muted, SegmentedControl, Txt } from "@/components/ui"
+import { Touchable } from "@/components/touchable"
 import {
   RELAY_URL,
   shortNpub,
@@ -17,7 +18,7 @@ import { PeopleList } from "@/chat/people-list"
 import { SignInPrompt } from "@/chat/sign-in-prompt"
 import { excerpt, timeAgo } from "@/lib/format"
 import { useAuth } from "@/store/auth"
-import { layout, usePalette } from "@/theme"
+import { layout, space, usePalette } from "@/theme"
 
 /** Relative time from a Nostr `created_at` (epoch seconds). */
 function fromEpoch(seconds: number): string {
@@ -53,9 +54,16 @@ function IdentityBar({ status }: { status: ChatConnectionStatus }) {
   const host = RELAY_URL.replace(/^wss?:\/\//, "")
 
   return (
-    <View style={{ paddingHorizontal: layout.gutter, paddingTop: 8, paddingBottom: 14, gap: 6 }}>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: dot }} />
+    <View
+      style={{
+        paddingHorizontal: layout.gutter,
+        paddingTop: space.sm,
+        paddingBottom: space.md + space.hair,
+        gap: space.xs + space.hair,
+      }}
+    >
+      <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+        <View style={{ width: space.sm, height: space.sm, borderRadius: space.xs, backgroundColor: dot }} />
         <Txt variant="label" color={p.muted}>
           {STATUS_COPY[status]}
         </Txt>
@@ -64,7 +72,7 @@ function IdentityBar({ status }: { status: ChatConnectionStatus }) {
         </Txt>
       </View>
       {identity ? (
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: space.xs + space.hair }}>
           <Ionicons name="key-outline" size={12} color={p.muted} />
           <Muted numberOfLines={1}>{shortNpub(identity.npub)}</Muted>
         </View>
@@ -74,7 +82,7 @@ function IdentityBar({ status }: { status: ChatConnectionStatus }) {
           but anyone with the source can recompute it. Say so rather than
           letting it pass for a generated one. */}
       {identity?.source === "derived" ? (
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: space.xs + space.hair }}>
           <Ionicons name="warning-outline" size={12} color={p.danger} />
           <Muted numberOfLines={2} style={{ flex: 1 }}>
             This device couldn&apos;t store a private key, so chat is using a fallback identity.
@@ -87,7 +95,21 @@ function IdentityBar({ status }: { status: ChatConnectionStatus }) {
 
 /* ---------------------------------------------------------- channel row */
 
-function ChannelRow({ summary, onPress }: { summary: ChannelSummary; onPress: () => void }) {
+const CHANNEL_AVATAR = 44
+
+/** Aligned with the channel name rather than the screen edge — see the same
+ * treatment on the people list. */
+function ChannelSeparator() {
+  return <Divider inset={layout.gutter + CHANNEL_AVATAR + space.md} />
+}
+
+const ChannelRow = React.memo(function ChannelRow({
+  summary,
+  onPress,
+}: {
+  summary: ChannelSummary
+  onPress: (id: string) => void
+}) {
   const p = usePalette()
   const { channel, lastMessage, unread } = summary
 
@@ -96,26 +118,26 @@ function ChannelRow({ summary, onPress }: { summary: ChannelSummary; onPress: ()
     : (channel.topic ?? "No messages yet")
 
   return (
-    <Pressable
+    <Touchable
       accessibilityRole="button"
-      onPress={onPress}
-      style={({ pressed }) => ({
+      accessibilityLabel={channel.name}
+      onPress={() => onPress(channel.id)}
+      style={{
         flexDirection: "row",
         alignItems: "center",
-        gap: 12,
+        gap: space.md,
         paddingHorizontal: layout.gutter,
-        paddingVertical: 14,
-        backgroundColor: pressed ? p.surface : "transparent",
-      })}
+        paddingVertical: space.md + space.hair,
+      }}
     >
       {channel.kind === "dm" ? (
-        <Avatar uri={channel.avatarUrl} name={channel.name} size={44} />
+        <Avatar uri={channel.avatarUrl} name={channel.name} size={CHANNEL_AVATAR} />
       ) : (
         <View
           style={{
-            width: 44,
-            height: 44,
-            borderRadius: 22,
+            width: CHANNEL_AVATAR,
+            height: CHANNEL_AVATAR,
+            borderRadius: CHANNEL_AVATAR / 2,
             alignItems: "center",
             justifyContent: "center",
             backgroundColor: p.input,
@@ -131,8 +153,8 @@ function ChannelRow({ summary, onPress }: { summary: ChannelSummary; onPress: ()
         </View>
       )}
 
-      <View style={{ flex: 1, gap: 3 }}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+      <View style={{ flex: 1, gap: space.hair }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
           <Txt variant="heading" numberOfLines={1} style={{ flex: 1 }}>
             {channel.name}
           </Txt>
@@ -149,13 +171,13 @@ function ChannelRow({ summary, onPress }: { summary: ChannelSummary; onPress: ()
       </View>
 
       {unread ? (
-        <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: p.accent }} />
+        <View style={{ width: space.sm + 1, height: space.sm + 1, borderRadius: 5, backgroundColor: p.accent }} />
       ) : (
         <Ionicons name="chevron-forward" size={16} color={p.border} />
       )}
-    </Pressable>
+    </Touchable>
   )
-}
+})
 
 /**
  * The channel list, as its own segment.
@@ -180,9 +202,7 @@ function ChannelsSegment({
   onOpen: (id: string) => void
 }) {
   const renderItem = useCallback(
-    ({ item }: { item: ChannelSummary }) => (
-      <ChannelRow summary={item} onPress={() => onOpen(item.channel.id)} />
-    ),
+    ({ item }: { item: ChannelSummary }) => <ChannelRow summary={item} onPress={onOpen} />,
     [onOpen],
   )
 
@@ -222,8 +242,8 @@ function ChannelsSegment({
           />
         )
       }
-      ItemSeparatorComponent={Divider}
-      contentContainerStyle={{ paddingBottom: 24 }}
+      ItemSeparatorComponent={ChannelSeparator}
+      contentContainerStyle={{ paddingBottom: space.xxl - space.xs }}
       keyboardShouldPersistTaps="handled"
     />
   )
@@ -260,7 +280,7 @@ export default function ChatScreen() {
   return (
     <View style={{ flex: 1 }}>
       <IdentityBar status={status} />
-      <View style={{ paddingBottom: 10 }}>
+      <View style={{ paddingBottom: space.sm + space.hair }}>
         <SegmentedControl options={SEGMENTS} value={tab} onChange={setTab} />
       </View>
       {tab === "people" ? (

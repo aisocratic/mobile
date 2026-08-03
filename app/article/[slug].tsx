@@ -3,7 +3,7 @@ import { Image } from "expo-image"
 import { useLocalSearchParams, useRouter } from "expo-router"
 import * as WebBrowser from "expo-web-browser"
 import React from "react"
-import { Platform, Pressable, ScrollView, Share, StyleSheet, View } from "react-native"
+import { Platform, ScrollView, Share, StyleSheet, View } from "react-native"
 
 import {
   authorLine,
@@ -29,7 +29,8 @@ import {
   Txt,
 } from "@/components/ui"
 import { formatDay } from "@/lib/format"
-import { layout, usePalette } from "@/theme"
+import { Touchable } from "@/components/touchable"
+import { layout, space, usePalette } from "@/theme"
 
 const REACTION_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
   like: "heart",
@@ -171,7 +172,7 @@ export default function ArticleScreen() {
             </View>
           ) : null}
 
-          <Txt variant="display" style={{ lineHeight: 38 }}>
+          <Txt variant="display">
             {post.title ?? "Untitled"}
           </Txt>
 
@@ -239,22 +240,24 @@ export default function ArticleScreen() {
           </View>
         ) : null}
 
-        <View style={{ paddingHorizontal: layout.gutter, paddingTop: 32, gap: 14 }}>
+        <View
+          style={{ paddingHorizontal: layout.gutter, paddingTop: space.xxl + space.xs, gap: space.lg }}
+        >
           <Divider />
-          <Pressable
+          <Touchable
             accessibilityRole="link"
             onPress={openWeb}
-            style={({ pressed }) => ({
+            style={{
               flexDirection: "row",
               alignItems: "center",
-              gap: 8,
-              opacity: pressed ? 0.6 : 1,
-            })}
+              gap: space.sm,
+              paddingVertical: space.xs,
+            }}
           >
             <Ionicons name="globe-outline" size={16} color={p.muted} />
             <Muted style={{ flex: 1 }}>Read this story on aisocratic.org</Muted>
             <Ionicons name="chevron-forward" size={16} color={p.muted} />
-          </Pressable>
+          </Touchable>
         </View>
       </ScrollView>
     </Screen>

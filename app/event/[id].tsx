@@ -4,14 +4,15 @@ import { LinearGradient } from "expo-linear-gradient"
 import { Stack, useLocalSearchParams } from "expo-router"
 import * as WebBrowser from "expo-web-browser"
 import React, { useCallback, useMemo } from "react"
-import { Pressable, ScrollView, Share, StyleSheet, View } from "react-native"
+import { ScrollView, Share, StyleSheet, View } from "react-native"
 
 import { eventCover, eventLink, eventPlace, useEvent } from "@/api/events"
 import { FadeIn } from "@/components/fade-in"
 import { Markdown } from "@/components/markdown"
-import { Avatar, Chip, Divider, ErrorState, Loading, Screen, Txt } from "@/components/ui"
+import { Touchable } from "@/components/touchable"
+import { Avatar, Chip, Divider, ErrorState, IconButton, Loading, Screen, Txt } from "@/components/ui"
 import { excerpt, linkedinUrl, organizerName, parseDate } from "@/lib/format"
-import { layout, usePalette, type Palette } from "@/theme"
+import { layout, motion, space, usePalette, type Palette } from "@/theme"
 import type { EventHost, EventRow } from "@/types"
 
 const HERO_RATIO = 16 / 9
@@ -93,7 +94,7 @@ function Hero({ event, p }: { event: EventRow; p: Palette }) {
           source={{ uri }}
           style={StyleSheet.absoluteFill}
           contentFit="cover"
-          transition={220}
+          transition={motion.image}
           cachePolicy="memory-disk"
         />
       ) : (
@@ -155,23 +156,26 @@ function HostCard({ host, p }: { host: EventHost; p: Palette }) {
   }, [url])
 
   return (
-    <Pressable
+    <Touchable
       accessibilityRole={url ? "link" : "text"}
       disabled={!url}
       onPress={open}
-      style={({ pressed }) => [styles.host, { opacity: pressed && url ? 0.6 : 1 }]}
+      // Hosts without a LinkedIn are not tappable; they must not react.
+      scale={url ? motion.pressScale : 1}
+      activeOpacity={url ? 0.6 : 1}
+      style={styles.host}
     >
       <Avatar uri={host.avatar_url} name={host.name} size={42} />
       <View style={{ flex: 1 }}>
         <Txt variant="heading">{host.name ?? "Host"}</Txt>
         {headline ? (
-          <Txt variant="caption" color={p.muted} numberOfLines={2} style={{ marginTop: 2 }}>
+          <Txt variant="caption" color={p.muted} numberOfLines={2} style={{ marginTop: space.hair }}>
             {headline}
           </Txt>
         ) : null}
       </View>
       {url ? <Ionicons name="logo-linkedin" size={18} color={p.muted} /> : null}
-    </Pressable>
+    </Touchable>
   )
 }
 
@@ -190,18 +194,8 @@ export default function EventDetailScreen() {
   }, [link, title])
 
   const headerRight = useCallback(
-    () => (
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Share event"
-        onPress={share}
-        hitSlop={12}
-        style={({ pressed }) => ({ opacity: pressed ? 0.5 : 1 })}
-      >
-        <Ionicons name="share-outline" size={22} color={p.text} />
-      </Pressable>
-    ),
-    [share, p.text],
+    () => <IconButton icon="share-outline" label="Share event" onPress={share} />,
+    [share],
   )
 
   const when = useMemo(() => (event ? formatWhen(event) : null), [event])
@@ -241,13 +235,11 @@ export default function EventDetailScreen() {
         </FadeIn>
 
         <View style={styles.body}>
-          <FadeIn delay={80}>
-            <Txt variant="display" style={{ lineHeight: 36 }}>
-              {title}
-            </Txt>
+          <FadeIn delay={motion.stagger * 2}>
+            <Txt variant="display">{title}</Txt>
 
             {organizer ? (
-              <Txt variant="caption" color={p.muted} style={{ marginTop: 6 }}>
+              <Txt variant="caption" color={p.muted} style={{ marginTop: space.xs + space.hair }}>
                 Hosted by {organizer}
               </Txt>
             ) : null}
@@ -261,7 +253,7 @@ export default function EventDetailScreen() {
             ) : null}
           </FadeIn>
 
-          <FadeIn delay={160}>
+          <FadeIn delay={motion.stagger * 4}>
             <View style={styles.metaBlock}>
               <MetaRow
                 icon="calendar-outline"
@@ -289,38 +281,34 @@ export default function EventDetailScreen() {
 
           {link ? (
             <View style={styles.actions}>
-              <Pressable
+              <Touchable
                 accessibilityRole="button"
                 onPress={() => void WebBrowser.openBrowserAsync(link)}
-                style={({ pressed }) => [
-                  styles.primary,
-                  { backgroundColor: p.primary, opacity: pressed ? 0.85 : 1 },
-                ]}
+                haptic="light"
+                style={[styles.primary, { backgroundColor: p.primary }]}
               >
                 <Ionicons name="open-outline" size={18} color={p.primaryText} />
                 <Txt variant="heading" color={p.primaryText}>
                   {isLuma ? "Register on Luma" : "View event"}
                 </Txt>
-              </Pressable>
+              </Touchable>
 
-              <Pressable
+              <Touchable
                 accessibilityRole="button"
                 accessibilityLabel="Share event"
                 onPress={share}
-                style={({ pressed }) => [
-                  styles.secondary,
-                  { backgroundColor: p.input, borderColor: p.border, opacity: pressed ? 0.7 : 1 },
-                ]}
+                haptic="light"
+                style={[styles.secondary, { backgroundColor: p.input, borderColor: p.border }]}
               >
                 <Ionicons name="share-outline" size={18} color={p.text} />
-              </Pressable>
+              </Touchable>
             </View>
           ) : null}
 
           {event.hosts?.length ? (
             <View style={styles.section}>
               <Divider />
-              <Txt variant="title" style={{ marginTop: 22, marginBottom: 6 }}>
+              <Txt variant="title" style={{ marginTop: space.xxl - space.xs, marginBottom: space.xs }}>
                 {event.hosts.length === 1 ? "Host" : "Hosts"}
               </Txt>
               {event.hosts.map((host, i) => (
@@ -330,10 +318,10 @@ export default function EventDetailScreen() {
           ) : null}
 
           {body ? (
-            <FadeIn delay={240}>
+            <FadeIn delay={motion.stagger * 6}>
               <View style={styles.section}>
                 <Divider />
-                <Txt variant="title" style={{ marginTop: 22, marginBottom: 4 }}>
+                <Txt variant="title" style={{ marginTop: space.xxl - space.xs, marginBottom: space.xs }}>
                   About
                 </Txt>
                 <Markdown content={body} />
@@ -357,22 +345,22 @@ const styles = StyleSheet.create({
   },
   body: {
     paddingHorizontal: layout.gutter,
-    marginTop: -12,
+    marginTop: -space.md,
   },
   tags: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 8,
-    marginTop: 14,
+    gap: space.sm,
+    marginTop: space.lg,
   },
   metaBlock: {
-    marginTop: 20,
-    gap: 14,
+    marginTop: space.xl,
+    gap: space.lg,
   },
   metaRow: {
     flexDirection: "row",
     alignItems: "flex-start",
-    gap: 12,
+    gap: space.md,
   },
   metaIcon: {
     width: 34,
@@ -383,16 +371,16 @@ const styles = StyleSheet.create({
   },
   actions: {
     flexDirection: "row",
-    gap: 10,
-    marginTop: 22,
+    gap: space.sm + space.hair,
+    marginTop: space.xxl - space.xs,
   },
   primary: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
-    paddingVertical: 14,
+    gap: space.sm,
+    paddingVertical: space.lg - 2,
     borderRadius: layout.radiusSmall,
   },
   secondary: {
@@ -403,12 +391,12 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
   },
   section: {
-    marginTop: 26,
+    marginTop: space.xxl,
   },
   host: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    paddingVertical: 10,
+    gap: space.md,
+    paddingVertical: space.sm + space.hair,
   },
 })

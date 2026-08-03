@@ -5,7 +5,7 @@ import { StyleSheet } from "react-native"
 
 import { InviteButton } from "@/chat/invite-button"
 import { isEnabled } from "@/features"
-import { usePalette } from "@/theme"
+import { motion, usePalette } from "@/theme"
 
 /**
  * Every screen file in this directory becomes a tab whether it is listed here
@@ -46,6 +46,13 @@ export default function TabsLayout() {
         headerTitleStyle: { fontWeight: "700", fontSize: 20 },
         headerShadowVisible: false,
         sceneStyle: { backgroundColor: p.background },
+        // Tabs used to cut hard from one to the next. A cross-fade is the
+        // right amount for a bar you tap dozens of times a session: enough to
+        // register as a change, over before you'd call it an animation.
+        // Deliberately not "shift" — sliding whole screens sideways implies an
+        // ordering between Feed, Events and Chat that doesn't exist.
+        animation: "fade",
+        transitionSpec: { animation: "timing", config: { duration: motion.fast } },
       }}
     >
       <Tabs.Screen

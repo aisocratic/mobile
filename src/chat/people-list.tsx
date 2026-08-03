@@ -1,63 +1,68 @@
 import { Ionicons } from "@expo/vector-icons"
 import React, { useCallback, useMemo, useState } from "react"
-import { FlatList, Pressable, RefreshControl, View } from "react-native"
+import { FlatList, RefreshControl, View } from "react-native"
 
 import { filterCommunityMembers, useCommunityMembers, type CommunityMember } from "@/api/people"
 import { Avatar, Divider, EmptyState, ErrorState, Field, Loading, Muted, Txt } from "@/components/ui"
 import { FadeIn } from "@/components/fade-in"
-import { layout, usePalette } from "@/theme"
+import { Touchable } from "@/components/touchable"
+import { layout, motion, space, usePalette } from "@/theme"
 
 /* ----------------------------------------------------------- people row */
 
-// Long member lists shouldn't take seconds to finish animating in; everyone
-// past the cap arrives on the same beat as row 10 instead of queuing further.
-const STAGGER_CAP = 10
-const STAGGER_STEP = 35
+const AVATAR = 44
 
-export function PersonRow({
+/** A stable identity for "no members", so `visible` below isn't recomputed on
+ * every render just because `data ?? []` minted a new empty array. */
+const NO_MEMBERS: CommunityMember[] = []
+
+/** Indented past the avatar, so the rules read as a column of people rather
+ * than as full-width dividers slicing the screen. Defined out here because an
+ * inline arrow would be a new component type on every render, which makes
+ * FlatList tear down and rebuild every separator. */
+function PeopleSeparator() {
+  return <Divider inset={layout.gutter + AVATAR + space.md} />
+}
+
+export const PersonRow = React.memo(function PersonRow({
   member,
-  index,
   onPress,
 }: {
   member: CommunityMember
-  index: number
-  onPress: () => void
+  onPress: (id: string) => void
 }) {
   const p = usePalette()
   const affiliation = [member.jobTitle, member.organization].filter(Boolean).join(" · ")
 
   return (
-    <FadeIn delay={Math.min(index, STAGGER_CAP) * STAGGER_STEP} offset={8}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={member.fullName}
-        onPress={onPress}
-        style={({ pressed }) => ({
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 12,
-          paddingHorizontal: layout.gutter,
-          paddingVertical: 12,
-          backgroundColor: pressed ? p.surface : "transparent",
-        })}
-      >
-        <Avatar uri={member.avatarUrl} name={member.fullName} size={44} />
-        <View style={{ flex: 1, gap: 2 }}>
-          <Txt variant="heading" numberOfLines={1}>
-            {member.fullName}
+    <Touchable
+      accessibilityRole="button"
+      accessibilityLabel={member.fullName}
+      onPress={() => onPress(member.id)}
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: space.md,
+        paddingHorizontal: layout.gutter,
+        paddingVertical: space.md,
+      }}
+    >
+      <Avatar uri={member.avatarUrl} name={member.fullName} size={AVATAR} />
+      <View style={{ flex: 1, gap: space.hair }}>
+        <Txt variant="heading" numberOfLines={1}>
+          {member.fullName}
+        </Txt>
+        {affiliation ? (
+          <Txt variant="body" color={p.muted} numberOfLines={1}>
+            {affiliation}
           </Txt>
-          {affiliation ? (
-            <Txt variant="body" color={p.muted} numberOfLines={1}>
-              {affiliation}
-            </Txt>
-          ) : null}
-          {member.location ? <Muted numberOfLines={1}>{member.location}</Muted> : null}
-        </View>
-        <Ionicons name="chevron-forward" size={16} color={p.border} />
-      </Pressable>
-    </FadeIn>
+        ) : null}
+        {member.location ? <Muted numberOfLines={1}>{member.location}</Muted> : null}
+      </View>
+      <Ionicons name="chevron-forward" size={16} color={p.border} />
+    </Touchable>
   )
-}
+})
 
 /**
  * The member directory: everyone in the community, searchable, one tap from a
@@ -70,13 +75,22 @@ export function PeopleList({ onOpen }: { onOpen: (id: string) => void }) {
   const [search, setSearch] = useState("")
   const { data, isPending, isFetching, error, refetch } = useCommunityMembers()
 
-  const members = data ?? []
+  const members = data ?? NO_MEMBERS
   const visible = useMemo(() => filterCommunityMembers(members, search), [members, search])
 
   const renderItem = useCallback(
-    ({ item, index }: { item: CommunityMember; index: number }) => (
-      <PersonRow member={item} index={index} onPress={() => onOpen(item.id)} />
-    ),
+    ({ item, index }: { item: CommunityMember; index: number }) => {
+      const row = <PersonRow member={item} onPress={onOpen} />
+      // Only the first screenful is staggered; past that, rows would animate
+      // as you scroll onto them, which reads as lag rather than as arrival.
+      return index < motion.staggerCap ? (
+        <FadeIn index={index} offset={space.sm}>
+          {row}
+        </FadeIn>
+      ) : (
+        row
+      )
+    },
     [onOpen],
   )
 
@@ -101,7 +115,7 @@ export function PeopleList({ onOpen }: { onOpen: (id: string) => void }) {
       renderItem={renderItem}
       ListHeaderComponent={
         members.length > 0 ? (
-          <View style={{ paddingHorizontal: layout.gutter, paddingBottom: 10 }}>
+          <View style={{ paddingHorizontal: layout.gutter, paddingBottom: space.sm + space.hair }}>
             <Field
               placeholder="Search name, company or location"
               value={search}
@@ -115,9 +129,10 @@ export function PeopleList({ onOpen }: { onOpen: (id: string) => void }) {
         ) : null
       }
       ListEmptyComponent={empty}
-      ItemSeparatorComponent={Divider}
-      contentContainerStyle={{ paddingBottom: 24 }}
+      ItemSeparatorComponent={PeopleSeparator}
+      contentContainerStyle={{ paddingBottom: space.xxl - space.xs }}
       keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
       refreshControl={
         <RefreshControl
           refreshing={isFetching && !isPending}

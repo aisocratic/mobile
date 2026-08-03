@@ -2,12 +2,17 @@ import { Ionicons } from "@expo/vector-icons"
 import { useRouter } from "expo-router"
 import * as WebBrowser from "expo-web-browser"
 import React, { useCallback, useState } from "react"
-import { Alert, Linking, Pressable, ScrollView, StyleSheet, View } from "react-native"
+import { Alert, Linking, ScrollView, StyleSheet, View } from "react-native"
 
-import { Avatar, Button, Card, Muted, Screen, Txt } from "@/components/ui"
+import { FadeIn } from "@/components/fade-in"
+import { Touchable } from "@/components/touchable"
+import { Avatar, Button, Card, Divider, Muted, Screen, Txt } from "@/components/ui"
 import { SITE_URL } from "@/lib/supabase"
 import { useAuth } from "@/store/auth"
-import { layout, usePalette } from "@/theme"
+import { layout, motion, space, usePalette } from "@/theme"
+
+/** Icon width + the row's gap, so a divider starts at the label. */
+const ROW_INSET = 20 + space.md + space.hair
 
 function Row({
   icon,
@@ -23,24 +28,28 @@ function Row({
   const p = usePalette()
 
   return (
-    <Pressable
+    <Touchable
       accessibilityRole={onPress ? "button" : undefined}
       onPress={onPress}
-      style={({ pressed }) => ({
+      disabled={!onPress}
+      // A static info row isn't tappable, so it must not shrink under a finger
+      // resting on it — only the ones that go somewhere respond.
+      scale={onPress ? motion.pressScale : 1}
+      activeOpacity={onPress ? 0.6 : 1}
+      style={{
         flexDirection: "row",
         alignItems: "center",
-        gap: 14,
-        paddingVertical: 14,
-        opacity: pressed && onPress ? 0.6 : 1,
-      })}
+        gap: space.md + space.hair,
+        paddingVertical: space.md + space.hair,
+      }}
     >
       <Ionicons name={icon} size={20} color={p.muted} />
       <View style={{ flex: 1 }}>
         <Txt variant="body">{label}</Txt>
-        {value ? <Muted style={{ marginTop: 2 }}>{value}</Muted> : null}
+        {value ? <Muted style={{ marginTop: space.hair }}>{value}</Muted> : null}
       </View>
       {onPress ? <Ionicons name="chevron-forward" size={17} color={p.muted} /> : null}
-    </Pressable>
+    </Touchable>
   )
 }
 
@@ -81,18 +90,24 @@ export default function ProfileTab() {
 
   return (
     <Screen>
-      <ScrollView contentContainerStyle={{ padding: layout.gutter, gap: 20, paddingBottom: 40 }}>
-        <View style={{ alignItems: "center", gap: 12, paddingTop: 8 }}>
+      <ScrollView
+        contentContainerStyle={{
+          padding: layout.gutter,
+          gap: space.xl,
+          paddingBottom: space.xxxl,
+        }}
+      >
+        <FadeIn style={{ alignItems: "center", gap: space.md, paddingTop: space.sm }}>
           <Avatar uri={avatar} name={name} size={88} />
-          <View style={{ alignItems: "center", gap: 3 }}>
+          <View style={{ alignItems: "center", gap: space.hair }}>
             <Txt variant="title">{name}</Txt>
             <Muted>{user?.email}</Muted>
           </View>
           {profile?.is_member ? (
             <View
               style={{
-                paddingHorizontal: 12,
-                paddingVertical: 5,
+                paddingHorizontal: space.md,
+                paddingVertical: space.xs + 1,
                 borderRadius: layout.radiusPill,
                 backgroundColor: `${p.accent}22`,
                 borderWidth: StyleSheet.hairlineWidth,
@@ -104,18 +119,19 @@ export default function ProfileTab() {
               </Txt>
             </View>
           ) : null}
-        </View>
+        </FadeIn>
 
         {profile?.bio ? (
           <Card>
-            <Txt variant="body" style={{ lineHeight: 22 }}>
-              {profile.bio}
-            </Txt>
+            <Txt variant="body">{profile.bio}</Txt>
           </Card>
         ) : null}
 
         {profile?.organization || profile?.job_title || profile?.location ? (
-          <Card style={{ paddingVertical: 4 }}>
+          // Hairlines between rows: without them a stack of icon rows inside a
+          // single card reads as one undifferentiated block. Inset past the
+          // icon column so they line up with the labels.
+          <Card style={{ paddingVertical: space.xs }}>
             {profile.job_title ? (
               <Row icon="briefcase-outline" label="Role" value={profile.job_title} />
             ) : null}
@@ -129,9 +145,9 @@ export default function ProfileTab() {
         ) : null}
 
         {!profile ? (
-          <Card style={{ gap: 10 }}>
+          <Card style={{ gap: space.sm + space.hair }}>
             <Txt variant="heading">Finish your profile</Txt>
-            <Txt variant="body" color={p.muted} style={{ lineHeight: 21 }}>
+            <Txt variant="body" color={p.muted}>
               We couldn't find a community profile linked to this account yet. Add your details and
               other members will see them across AI Socratic.
             </Txt>
@@ -144,18 +160,21 @@ export default function ProfileTab() {
           </Card>
         ) : null}
 
-        <Card style={{ paddingVertical: 4 }}>
+        <Card style={{ paddingVertical: space.xs }}>
           <Row icon="person-circle-outline" label="Edit profile" onPress={editProfile} />
+          <Divider inset={ROW_INSET} />
           <Row
             icon="mail-outline"
             label="Contact the team"
             onPress={() => open(`${SITE_URL}/contact`)}
           />
+          <Divider inset={ROW_INSET} />
           <Row
             icon="document-text-outline"
             label="Privacy policy"
             onPress={() => open(`${SITE_URL}/privacy-policy`)}
           />
+          <Divider inset={ROW_INSET} />
           <Row
             icon="settings-outline"
             label="System settings"

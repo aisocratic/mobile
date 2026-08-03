@@ -59,11 +59,7 @@ export function CommunityCta() {
         <FadeIn delay={140}>
           <Txt
             variant="body"
-            style={{
-              color: "rgba(255,255,255,0.76)",
-              textAlign: "center",
-              lineHeight: 21,
-            }}
+            style={{ color: "rgba(255,255,255,0.76)", textAlign: "center" }}
           >
             A global network of AI builders shaping the future together. Start a chapter, contribute
             to research, or find the people near you.

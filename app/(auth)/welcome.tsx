@@ -12,7 +12,8 @@ import { Button, Txt } from "@/components/ui"
 import { homeRoute } from "@/features"
 import { HERO_VIDEO } from "@/media/assets"
 import { VideoBackground } from "@/components/video-background"
-import { brand, layout } from "@/theme"
+import { Touchable } from "@/components/touchable"
+import { brand, layout, space } from "@/theme"
 
 const HIGHLIGHTS: { icon: keyof typeof Ionicons.glyphMap; title: string; body: string }[] = [
   {
@@ -121,7 +122,7 @@ export default function Welcome() {
                   <Txt variant="heading" style={{ color: "#FFFFFF" }}>
                     {h.title}
                   </Txt>
-                  <Txt variant="body" style={{ lineHeight: 20, color: "rgba(255,255,255,0.66)" }}>
+                  <Txt variant="body" style={{ color: "rgba(255,255,255,0.66)" }}>
                     {h.body}
                   </Txt>
                 </View>
@@ -145,19 +146,16 @@ export default function Welcome() {
           {/* AuthGate reaches this screen with replace(), so there's no back
               stack out of it — without this, signed-out users are trapped.
               Follows the feature flags rather than naming a tab. */}
-          <Pressable
+          <Touchable
             accessibilityRole="button"
             onPress={() => router.replace(homeRoute())}
-            style={({ pressed }) => ({
-              paddingVertical: 12,
-              alignItems: "center",
-              opacity: pressed ? 0.6 : 1,
-            })}
+            activeOpacity={0.6}
+            style={{ paddingVertical: space.md, alignItems: "center" }}
           >
             <Txt variant="body" style={{ color: "rgba(255,255,255,0.5)" }}>
               Not now — browse events
             </Txt>
-          </Pressable>
+          </Touchable>
         </FadeIn>
       </View>
     </View>
