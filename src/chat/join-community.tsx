@@ -95,7 +95,7 @@ export function JoinCommunity({ relayUrl }: { relayUrl: string }) {
         <Txt variant="title" style={{ textAlign: "center" }}>
           Join the community
         </Txt>
-        <Txt variant="body" color={p.muted} style={{ textAlign: "center", lineHeight: 21 }}>
+        <Txt variant="body" color={p.muted} style={{ textAlign: "center" }}>
           {canAutoJoin && !needsCode
             ? `${host} is a private Buzz community. We'll create your chat account and get you in — no invite code needed.`
             : `${host} is a private Buzz community. You need an invite code from the community owner before you can see or send messages.`}
@@ -115,7 +115,7 @@ export function JoinCommunity({ relayUrl }: { relayUrl: string }) {
           error={error}
         />
       ) : error ? (
-        <Txt variant="body" color={p.danger} style={{ lineHeight: 20 }}>
+        <Txt variant="body" color={p.danger} >
           {error}
         </Txt>
       ) : null}
@@ -144,7 +144,7 @@ export function JoinCommunity({ relayUrl }: { relayUrl: string }) {
           >
             {ageConfirmed ? <Ionicons name="checkmark" size={15} color="#0A0A0A" /> : null}
           </View>
-          <Txt variant="body" color={p.muted} style={{ flex: 1, lineHeight: 20 }}>
+          <Txt variant="body" color={p.muted} style={{ flex: 1 }}>
             I confirm I meet the minimum age requirement and accept the community terms and privacy
             notice.
           </Txt>
@@ -189,7 +189,7 @@ export function JoinCommunity({ relayUrl }: { relayUrl: string }) {
         />
       )}
 
-      <Muted style={{ lineHeight: 18 }}>
+      <Muted>
         {showCodeField
           ? "Your invite is redeemed over HTTPS and signed with your chat key (NIP-98). The code is used once and never stored on this device."
           : "A chat key is generated on this device and stays in its secure storage — only the public half is published so members can message you. The invite is single-use and expires in five minutes."}

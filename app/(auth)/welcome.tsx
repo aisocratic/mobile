@@ -3,11 +3,17 @@ import { Image } from "expo-image"
 import { LinearGradient } from "expo-linear-gradient"
 import { useRouter } from "expo-router"
 import React from "react"
-import { Pressable, View } from "react-native"
+import { Pressable, StyleSheet, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 
-import { Button, Screen, Txt } from "@/components/ui"
-import { brand, layout, useIsDark, usePalette } from "@/theme"
+import { ChromaticText } from "@/components/chromatic-text"
+import { FadeIn } from "@/components/fade-in"
+import { Button, Txt } from "@/components/ui"
+import { homeRoute } from "@/features"
+import { HERO_VIDEO } from "@/media/assets"
+import { VideoBackground } from "@/components/video-background"
+import { Touchable } from "@/components/touchable"
+import { brand, layout, space } from "@/theme"
 
 const HIGHLIGHTS: { icon: keyof typeof Ionicons.glyphMap; title: string; body: string }[] = [
   {
@@ -27,21 +33,37 @@ const HIGHLIGHTS: { icon: keyof typeof Ionicons.glyphMap; title: string; body: s
   },
 ]
 
+/**
+ * The first screen anyone sees, built on the same loop the website plays behind
+ * its 404 — full-bleed motion, a scrim, and type sitting on top of it.
+ *
+ * The palette is pinned to dark regardless of the device's theme, exactly as
+ * the website pins its 404 chrome with `logoVariant="dark"`. The footage is
+ * dark at every frame, so a light-mode phone rendering charcoal text over it
+ * would be unreadable. This is the one screen in the app that isn't
+ * theme-reactive, and it is deliberate.
+ */
 export default function Welcome() {
-  const p = usePalette()
-  const isDark = useIsDark()
   const insets = useSafeAreaInsets()
   const router = useRouter()
 
   return (
-    <Screen>
-      <LinearGradient
-        colors={
-          isDark
-            ? ["#1A1206", "#0A0A0A", "#0A0A0A"]
-            : ["#FEF3C7", "#FFFFFF", "#FFFFFF"]
+    <View style={{ flex: 1, backgroundColor: "#0A0A0A" }}>
+      <VideoBackground
+        asset={HERO_VIDEO}
+        overlay={
+          // Two stacked scrims. The vertical one buys legibility for the copy;
+          // the flat one keeps the brightest frames of the loop from washing
+          // out the buttons at the bottom.
+          <>
+            <LinearGradient
+              colors={["rgba(10,10,10,0.35)", "rgba(10,10,10,0.75)", "rgba(10,10,10,0.96)"]}
+              locations={[0, 0.45, 1]}
+              style={StyleSheet.absoluteFill}
+            />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(10,10,10,0.15)" }]} />
+          </>
         }
-        style={{ position: "absolute", top: 0, left: 0, right: 0, height: 420 }}
       />
 
       <View
@@ -52,78 +74,90 @@ export default function Welcome() {
           paddingHorizontal: layout.gutter + 4,
         }}
       >
-        <Image
-          source={
-            isDark
-              ? require("../../assets/ai-socratic-logo-dark.png")
-              : require("../../assets/ai-socratic-logo-light.png")
-          }
-          style={{ width: 210, height: 60 }}
-          contentFit="contain"
-        />
+        <FadeIn delay={80}>
+          <Image
+            source={require("../../assets/ai-socratic-logo-dark.png")}
+            style={{ width: 210, height: 60 }}
+            contentFit="contain"
+          />
+        </FadeIn>
 
-        <Txt variant="display" style={{ marginTop: 28, fontSize: 34, lineHeight: 40 }}>
-          The AI community for{"\n"}human flourishing.
-        </Txt>
+        <FadeIn delay={180}>
+          <ChromaticText
+            variant="display"
+            style={{ marginTop: 28 }}
+            textStyle={{ fontSize: 34, lineHeight: 40 }}
+            intensity={2.1}
+          >
+            {"The AI community for\nhuman flourishing."}
+          </ChromaticText>
+        </FadeIn>
 
-        <Txt variant="body" color={p.muted} style={{ marginTop: 12, lineHeight: 22, fontSize: 16 }}>
-          Engineers, researchers and founders thinking out loud together. No fees, no pitch decks.
-        </Txt>
+        <FadeIn delay={260}>
+          <Txt
+            variant="body"
+            style={{ marginTop: 12, lineHeight: 22, fontSize: 16, color: "rgba(255,255,255,0.72)" }}
+          >
+            Engineers, researchers and founders thinking out loud together. No fees, no pitch decks.
+          </Txt>
+        </FadeIn>
 
         <View style={{ gap: 20, marginTop: 40, flex: 1 }}>
-          {HIGHLIGHTS.map((h) => (
-            <View key={h.title} style={{ flexDirection: "row", gap: 14, alignItems: "flex-start" }}>
-              <View
-                style={{
-                  width: 38,
-                  height: 38,
-                  borderRadius: 12,
-                  backgroundColor: `${brand.amber}1F`,
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <Ionicons name={h.icon} size={19} color={p.accent} />
+          {HIGHLIGHTS.map((h, i) => (
+            <FadeIn key={h.title} delay={360 + i * 90}>
+              <View style={{ flexDirection: "row", gap: 14, alignItems: "flex-start" }}>
+                <View
+                  style={{
+                    width: 38,
+                    height: 38,
+                    borderRadius: 12,
+                    backgroundColor: `${brand.amber}2E`,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Ionicons name={h.icon} size={19} color={brand.amber} />
+                </View>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Txt variant="heading" style={{ color: "#FFFFFF" }}>
+                    {h.title}
+                  </Txt>
+                  <Txt variant="body" style={{ color: "rgba(255,255,255,0.66)" }}>
+                    {h.body}
+                  </Txt>
+                </View>
               </View>
-              <View style={{ flex: 1, gap: 2 }}>
-                <Txt variant="heading">{h.title}</Txt>
-                <Txt variant="body" color={p.muted} style={{ lineHeight: 20 }}>
-                  {h.body}
-                </Txt>
-              </View>
-            </View>
+            </FadeIn>
           ))}
         </View>
 
-        <View style={{ gap: 8 }}>
+        <FadeIn delay={660} style={{ gap: 8 }}>
           <Button label="Create an account" onPress={() => router.push("/(auth)/sign-up")} />
           <Pressable
             accessibilityRole="button"
             onPress={() => router.push("/(auth)/sign-in")}
             style={{ paddingVertical: 12, alignItems: "center" }}
           >
-            <Txt variant="body" color={p.muted}>
-              Already a member? <Txt color={p.accent}>Sign in</Txt>
+            <Txt variant="body" style={{ color: "rgba(255,255,255,0.66)" }}>
+              Already a member? <Txt style={{ color: brand.amber }}>Sign in</Txt>
             </Txt>
           </Pressable>
 
           {/* AuthGate reaches this screen with replace(), so there's no back
-              stack out of it — without this, signed-out users are trapped. */}
-          <Pressable
+              stack out of it — without this, signed-out users are trapped.
+              Follows the feature flags rather than naming a tab. */}
+          <Touchable
             accessibilityRole="button"
-            onPress={() => router.replace("/(tabs)/events")}
-            style={({ pressed }) => ({
-              paddingVertical: 12,
-              alignItems: "center",
-              opacity: pressed ? 0.6 : 1,
-            })}
+            onPress={() => router.replace(homeRoute())}
+            activeOpacity={0.6}
+            style={{ paddingVertical: space.md, alignItems: "center" }}
           >
-            <Txt variant="body" color={p.muted}>
+            <Txt variant="body" style={{ color: "rgba(255,255,255,0.5)" }}>
               Not now — browse events
             </Txt>
-          </Pressable>
-        </View>
+          </Touchable>
+        </FadeIn>
       </View>
-    </Screen>
+    </View>
   )
 }

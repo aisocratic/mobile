@@ -1,13 +1,15 @@
 /**
  * Feature flags — which sections of the app exist in this build.
  *
- * The first release ships Feed, Events and People. Chat is built and tested but
- * turned off: it needs a database migration applied and a community owner key
- * on the server before it works for anyone, and a tab that dead-ends is worse
- * than a tab that isn't there.
+ * The first release ships Feed, Blog, Events, Chat and Profile. Chat's tab now
+ * carries its own member directory (the People segment), so the standalone
+ * Connections tab is folded away: it read from `event_attendance`, a table RLS
+ * scopes to rows you already share, and the same "who else is here" job is
+ * better served by chat's `public.users` directory, which needs nothing you
+ * haven't already met to show a name.
  *
- * Nothing is deleted. A flag is one word in `.env`, so turning chat back on is
- * a rebuild rather than a revert.
+ * Nothing is deleted. A flag is one word in `.env`, so turning connections back
+ * on — or chat back off — is a rebuild rather than a revert.
  *
  * ## Why one variable and not one per feature
  *
@@ -28,7 +30,7 @@
  * adding a feature later does not mean editing every deployment's env.
  */
 
-export const FEATURES = ["feed", "events", "connections", "chat", "profile"] as const
+export const FEATURES = ["feed", "blog", "events", "connections", "chat", "profile"] as const
 
 export type FeatureName = (typeof FEATURES)[number]
 
@@ -41,12 +43,17 @@ export type FeatureName = (typeof FEATURES)[number]
  */
 const DEFAULTS: Record<FeatureName, boolean> = {
   feed: true,
+  // The blog got its own tab when Feed became news-only: two different kinds
+  // of reading, two different rhythms, one shared screen (StoryStream).
+  blog: true,
   events: true,
-  connections: true,
   profile: true,
-  // Off until `chat_identities` is applied and BUZZ_OWNER_KEY is set — see the
-  // chat section of README.md.
-  chat: false,
+  chat: true,
+  // Superseded by chat's People segment, which shows the same directory
+  // without needing `event_attendance` to already know you. Left in the
+  // build, off by default, in case a chapter wants the shared-events framing
+  // back.
+  connections: false,
 }
 
 function isFeature(value: string): value is FeatureName {
@@ -99,15 +106,18 @@ export function enabledFeatures(): FeatureName[] {
 
 /**
  * Tab order, which is also priority order: the first enabled one is where the
- * app opens. Feed leads because the news feed is the reason to open the app on
- * a given morning; Events and People are destinations you go looking for.
+ * app opens. Feed leads because the news is the reason to open the app on a
+ * given morning; Blog sits beside it as the other reading surface; Events and
+ * Chat are destinations you go looking for. Connections sits last — off by
+ * default, and superseded by chat's own People segment when it is on.
  */
 const TAB_ROUTES = [
   ["feed", "/(tabs)/feed"],
+  ["blog", "/(tabs)/blog"],
   ["events", "/(tabs)/events"],
-  ["connections", "/(tabs)/connections"],
   ["chat", "/(tabs)/chat"],
   ["profile", "/(tabs)/profile"],
+  ["connections", "/(tabs)/connections"],
 ] as const
 
 export type TabRoute = (typeof TAB_ROUTES)[number][1]

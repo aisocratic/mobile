@@ -9,7 +9,13 @@ import { Loading } from "@/components/ui"
 import { homeRoute, isEnabled } from "@/features"
 import { queryClient } from "@/lib/query"
 import { AuthProvider, useAuth } from "@/store/auth"
-import { usePalette, useIsDark } from "@/theme"
+import { ThemeProvider, usePalette, useIsDark } from "@/theme"
+
+// expo-router renders this in place of the whole route when RootLayout below
+// throws, so it covers every screen in the app — see
+// src/components/error-boundary.tsx for why it doesn't assume any of the
+// providers below are mounted.
+export { ErrorBoundary } from "@/components/error-boundary"
 
 /**
  * Events, news and the blog are public on aisocratic.org, so they stay
@@ -30,7 +36,13 @@ const FEATURE_ROUTES: Record<string, Parameters<typeof isEnabled>[0]> = {
   chat: "chat",
   invite: "chat",
   connections: "connections",
-  member: "connections",
+  // Not "connections": a person here is reached from chat's People segment
+  // (routes straight to `/chat/[id]`, so this screen itself is only linked
+  // from the Connections tab today) and hosts the Message button that is
+  // itself gated on chat. Gating it by "connections" would make it
+  // unreachable in exactly the build where chat — and messaging a member you
+  // just found — is on.
+  member: "chat",
   feed: "feed",
   events: "events",
   event: "events",
@@ -83,11 +95,21 @@ function RootNavigator() {
         // renders the group name, e.g. "(tabs)".
         headerBackButtonDisplayMode: "minimal",
         contentStyle: { backgroundColor: p.background },
+        // The native push, but slower than the default 350ms — the content on
+        // these screens is editorial, and a slightly longer curve makes opening
+        // a story feel like turning to it rather than snapping to it. Still
+        // interruptible, and still the platform gesture, so it never fights
+        // muscle memory.
+        animation: "slide_from_right",
+        animationDuration: 420,
       }}
     >
       <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen name="auth/callback" options={{ headerShown: false }} />
-      <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+      {/* The welcome screen opens on a full-bleed video, and sliding that in
+          from the edge shows a hard rectangle of moving footage crossing the
+          screen. A fade lets the first frame resolve in place instead. */}
+      <Stack.Screen name="(auth)" options={{ headerShown: false, animation: "fade" }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="event/[id]" options={{ title: "Event" }} />
       <Stack.Screen name="article/[slug]" options={{ title: "" }} />
@@ -105,20 +127,33 @@ function RootNavigator() {
   )
 }
 
-export default function RootLayout() {
+function Themed() {
   const isDark = useIsDark()
 
   return (
+    <>
+      <StatusBar style={isDark ? "light" : "dark"} />
+      <AuthGate>
+        <RootNavigator />
+      </AuthGate>
+    </>
+  )
+}
+
+export default function RootLayout() {
+  return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <QueryClientProvider client={queryClient}>
-          <AuthProvider>
-            <StatusBar style={isDark ? "light" : "dark"} />
-            <AuthGate>
-              <RootNavigator />
-            </AuthGate>
-          </AuthProvider>
-        </QueryClientProvider>
+        {/* Outermost of the app's own providers: it owns the single
+            `useColorScheme` subscription every `usePalette` call reads from,
+            so it has to sit above anything that renders. */}
+        <ThemeProvider>
+          <QueryClientProvider client={queryClient}>
+            <AuthProvider>
+              <Themed />
+            </AuthProvider>
+          </QueryClientProvider>
+        </ThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   )

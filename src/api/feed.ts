@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react"
+import { useCallback, useMemo, useRef } from "react"
 
 import { categoriesOf, coverUri, useBlogPosts, type BlogListItem } from "@/api/blog"
 import {
@@ -108,6 +108,8 @@ export type Feed = {
   error: unknown
   isRefetching: boolean
   isFetchingMore: boolean
+  /** More pages exist. False means this really is the bottom of the feed. */
+  hasMore: boolean
   refetch: () => void
   loadMore: () => void
 }
@@ -135,11 +137,44 @@ export function useFeed(
 
   const blogRows = useMemo(() => (wantsBlog ? (blog.data ?? []) : []), [wantsBlog, blog.data])
 
+  // A page loading in re-derives `newsRows`/`blogRows` as brand-new arrays, and a
+  // naive `.map(fromNews)` would hand every already-seen row a brand-new object
+  // too — which reads to FlatList as every visible row changing, not just the
+  // new ones, and floods it with re-renders on each `loadMore`. Caching by the
+  // underlying row's own reference keeps unchanged rows referentially stable
+  // across recomputation, so `React.memo` on the row component actually holds.
+  const newsItemCache = useRef(new WeakMap<NewsItem, FeedItem>()).current
+  const blogItemCache = useRef(new WeakMap<BlogListItem, FeedItem>()).current
+
+  const cachedFromNews = useCallback(
+    (item: NewsItem): FeedItem => {
+      let cached = newsItemCache.get(item)
+      if (!cached) {
+        cached = fromNews(item)
+        newsItemCache.set(item, cached)
+      }
+      return cached
+    },
+    [newsItemCache],
+  )
+
+  const cachedFromBlog = useCallback(
+    (post: BlogListItem): FeedItem => {
+      let cached = blogItemCache.get(post)
+      if (!cached) {
+        cached = fromBlog(post)
+        blogItemCache.set(post, cached)
+      }
+      return cached
+    },
+    [blogItemCache],
+  )
+
   const items = useMemo(() => {
-    const fromNewsRows = newsRows.map(fromNews)
+    const fromNewsRows = newsRows.map(cachedFromNews)
     let fromBlogRows = blogRows
       .filter((post) => !category || hasCategory(post.categories, category))
-      .map(fromBlog)
+      .map(cachedFromBlog)
 
     // The blog arrives whole while news is paged, so a blog post older than the
     // last loaded news item would sit at the bottom of the list and then have
@@ -153,7 +188,7 @@ export function useFeed(
     return [...fromNewsRows, ...fromBlogRows].sort(
       (a, b) => time(b.publishedAt) - time(a.publishedAt),
     )
-  }, [newsRows, blogRows, category, news.hasNextPage])
+  }, [newsRows, blogRows, category, news.hasNextPage, cachedFromNews, cachedFromBlog])
 
   const categories = useMemo(() => {
     // Tags are hand-entered on both sides, so "Research" and "research" are the
@@ -189,6 +224,9 @@ export function useFeed(
     isRefetching:
       (wantsNews && news.isRefetching && !news.isFetchingNextPage) || (wantsBlog && blog.isRefetching),
     isFetchingMore: wantsNews && news.isFetchingNextPage,
+    // Only news paginates; the blog's rows all arrive in one request, so a
+    // blog-only feed is complete the moment it has loaded.
+    hasMore: wantsNews && !!news.hasNextPage,
     refetch,
     loadMore,
   }

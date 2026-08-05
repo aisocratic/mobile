@@ -91,7 +91,7 @@ function Options<T>({
           )
         })}
       </View>
-      {hint ? <Muted style={{ lineHeight: 17 }}>{hint}</Muted> : null}
+      {hint ? <Muted>{hint}</Muted> : null}
     </View>
   )
 }
@@ -141,7 +141,7 @@ function InviteResult({
         <Txt variant="title" style={{ textAlign: "center" }}>
           Invite ready
         </Txt>
-        <Txt variant="body" color={p.muted} style={{ textAlign: "center", lineHeight: 21 }}>
+        <Txt variant="body" color={p.muted} style={{ textAlign: "center" }}>
           Send this now — the community shows the code once and can&apos;t show it again.
         </Txt>
       </View>
@@ -153,7 +153,7 @@ function InviteResult({
           </Txt>
           {/* Selectable so a long-press copy works without a clipboard
               dependency; the share sheet covers the common path. */}
-          <Txt selectable variant="body" style={{ lineHeight: 22 }}>
+          <Txt selectable variant="body">
             {invite.code}
           </Txt>
         </View>
@@ -164,7 +164,7 @@ function InviteResult({
           <Txt variant="label" color={p.muted}>
             Link
           </Txt>
-          <Txt selectable variant="body" color={p.accent} style={{ lineHeight: 20 }}>
+          <Txt selectable variant="body" color={p.accent}>
             {invite.url}
           </Txt>
         </View>
@@ -189,7 +189,7 @@ function InviteResult({
         onPress={onCreateAnother}
       />
 
-      <Muted style={{ lineHeight: 18 }}>
+      <Muted>
         Anyone holding this code can join until it expires or runs out of uses. Treat it like a
         door key, not a public link.
       </Muted>
@@ -221,7 +221,7 @@ export function InvitePeople({ relayUrl }: { relayUrl: string }) {
             <Txt variant="title" style={{ textAlign: "center" }}>
               Invite someone
             </Txt>
-            <Txt variant="body" color={p.muted} style={{ textAlign: "center", lineHeight: 21 }}>
+            <Txt variant="body" color={p.muted} style={{ textAlign: "center" }}>
               {host} is a private community. An invite code lets one person — or a set number of
               people — join it and start reading and posting.
             </Txt>
@@ -245,7 +245,7 @@ export function InvitePeople({ relayUrl }: { relayUrl: string }) {
           />
 
           {error ? (
-            <Txt variant="body" color={p.danger} style={{ lineHeight: 20 }}>
+            <Txt variant="body" color={p.danger} >
               {error}
             </Txt>
           ) : null}
@@ -258,7 +258,7 @@ export function InvitePeople({ relayUrl }: { relayUrl: string }) {
             onPress={() => void create({ ttlSecs, maxUses })}
           />
 
-          <Muted style={{ lineHeight: 18 }}>
+          <Muted>
             The request is signed with your chat key (NIP-98). Only community owners and admins can
             create invites — if that isn&apos;t you, the community will say so.
           </Muted>

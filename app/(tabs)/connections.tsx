@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons"
 import { useRouter } from "expo-router"
 import React, { useCallback, useMemo, useState } from "react"
-import { FlatList, Pressable, RefreshControl, StyleSheet, View } from "react-native"
+import { FlatList, RefreshControl, StyleSheet, View } from "react-native"
 
 import {
   connectionSubtitle,
@@ -21,7 +21,8 @@ import {
   SegmentedControl,
   Txt,
 } from "@/components/ui"
-import { layout, usePalette } from "@/theme"
+import { Touchable } from "@/components/touchable"
+import { layout, space, usePalette } from "@/theme"
 import type { Connection } from "@/types"
 
 const FILTERS: { value: ConnectionFilter; label: string }[] = [
@@ -46,11 +47,11 @@ const ConnectionRow = React.memo(function ConnectionRow({
   const affiliation = [connection.title, connection.company].filter(Boolean).join(" @ ")
 
   return (
-    <Pressable
+    <Touchable
       accessibilityRole="button"
       accessibilityLabel={connection.name ?? "Member"}
       onPress={() => onPress(connection.id)}
-      style={({ pressed }) => [styles.row, { opacity: pressed ? 0.6 : 1 }]}
+      style={styles.row}
     >
       <Avatar uri={connection.avatarUrl} name={connection.name} size={46} />
 
@@ -76,8 +77,8 @@ const ConnectionRow = React.memo(function ConnectionRow({
         </Txt>
       </View>
 
-      <Ionicons name="chevron-forward" size={16} color={p.border} style={{ marginTop: 6 }} />
-    </Pressable>
+      <Ionicons name="chevron-forward" size={16} color={p.border} style={{ marginTop: space.xs + space.hair }} />
+    </Touchable>
   )
 })
 
@@ -148,7 +149,7 @@ export default function ConnectionsScreen() {
       <FlatList
         data={visible}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={{ paddingBottom: 40 }}
+        contentContainerStyle={{ paddingBottom: space.xxxl }}
         keyboardShouldPersistTaps="handled"
         ListHeaderComponent={
           <View style={styles.header}>
@@ -199,13 +200,13 @@ export default function ConnectionsScreen() {
 
 const styles = StyleSheet.create({
   header: {
-    paddingTop: 12,
-    paddingBottom: 8,
-    gap: 14,
+    paddingTop: space.md,
+    paddingBottom: space.sm,
+    gap: space.lg,
   },
   headerText: {
     paddingHorizontal: layout.gutter,
-    gap: 4,
+    gap: space.xs,
   },
   search: {
     paddingHorizontal: layout.gutter,
@@ -213,17 +214,17 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     alignItems: "flex-start",
-    gap: 14,
+    gap: space.lg,
     paddingHorizontal: layout.gutter,
-    paddingVertical: 12,
+    paddingVertical: space.md,
   },
   rowBody: {
     flex: 1,
-    gap: 3,
+    gap: space.xs - 1,
   },
   nameLine: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: space.sm,
   },
 })

@@ -1,9 +1,9 @@
-import * as Haptics from "expo-haptics"
 import { useRouter } from "expo-router"
 import type { User } from "@supabase/supabase-js"
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native"
 
+import { fire } from "@/components/touchable"
 import { Avatar, Button, Field, Muted, Screen, Txt } from "@/components/ui"
 import { normalizeLinkedIn } from "@/lib/format"
 import { useAuth, type Profile } from "@/store/auth"
@@ -103,10 +103,10 @@ export default function EditProfileScreen() {
         bio: blank(form.bio),
         linkedin_url: normalizeLinkedIn(form.linkedin_url),
       })
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
+      fire("success")
       close()
     } catch (e) {
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)
+      fire("error")
       setError(e instanceof Error ? e.message : "Could not save your profile.")
     } finally {
       setSaving(false)
@@ -194,7 +194,7 @@ export default function EditProfileScreen() {
           </View>
 
           {error ? (
-            <Txt variant="caption" color={p.danger} style={{ lineHeight: 18 }}>
+            <Txt variant="caption" color={p.danger}>
               {error}
             </Txt>
           ) : null}
@@ -209,7 +209,7 @@ export default function EditProfileScreen() {
             />
           </View>
 
-          <Muted style={{ textAlign: "center", lineHeight: 18 }}>
+          <Muted style={{ textAlign: "center" }}>
             Your name, role and bio are visible to other members on aisocratic.org.
           </Muted>
         </ScrollView>

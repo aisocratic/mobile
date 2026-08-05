@@ -1,9 +1,7 @@
-import { Ionicons } from "@expo/vector-icons"
 import { useRouter } from "expo-router"
 import React from "react"
-import { Pressable } from "react-native"
 
-import { layout, usePalette } from "@/theme"
+import { IconButton } from "@/components/ui"
 
 import { useChatStatus, useRelayCapabilities } from "./index"
 
@@ -17,7 +15,6 @@ import { useChatStatus, useRelayCapabilities } from "./index"
  * is worse than letting the relay answer.
  */
 export function InviteButton() {
-  const p = usePalette()
   const router = useRouter()
   const status = useChatStatus()
   const caps = useRelayCapabilities()
@@ -26,17 +23,10 @@ export function InviteButton() {
   if (status === "unavailable" || status === "not-a-member") return null
 
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel="Invite someone to the community"
+    <IconButton
+      icon="person-add-outline"
+      label="Invite someone to the community"
       onPress={() => router.push("/invite/new")}
-      hitSlop={10}
-      style={({ pressed }) => ({
-        paddingHorizontal: layout.gutter - 8,
-        opacity: pressed ? 0.6 : 1,
-      })}
-    >
-      <Ionicons name="person-add-outline" size={22} color={p.text} />
-    </Pressable>
+    />
   )
 }

@@ -1,9 +1,10 @@
 import { Ionicons } from "@expo/vector-icons"
 import { useRouter } from "expo-router"
-import React, { useCallback } from "react"
-import { FlatList, Pressable, StyleSheet, View } from "react-native"
+import React, { useCallback, useState } from "react"
+import { FlatList, StyleSheet, View } from "react-native"
 
-import { Avatar, Divider, EmptyState, ErrorState, Loading, Muted, Txt } from "@/components/ui"
+import { Avatar, Divider, EmptyState, ErrorState, Loading, Muted, SegmentedControl, Txt } from "@/components/ui"
+import { Touchable } from "@/components/touchable"
 import {
   RELAY_URL,
   shortNpub,
@@ -13,10 +14,11 @@ import {
   type ChatConnectionStatus,
 } from "@/chat"
 import { JoinCommunity } from "@/chat/join-community"
+import { PeopleList } from "@/chat/people-list"
 import { SignInPrompt } from "@/chat/sign-in-prompt"
 import { excerpt, timeAgo } from "@/lib/format"
 import { useAuth } from "@/store/auth"
-import { layout, usePalette } from "@/theme"
+import { layout, space, usePalette } from "@/theme"
 
 /** Relative time from a Nostr `created_at` (epoch seconds). */
 function fromEpoch(seconds: number): string {
@@ -52,9 +54,16 @@ function IdentityBar({ status }: { status: ChatConnectionStatus }) {
   const host = RELAY_URL.replace(/^wss?:\/\//, "")
 
   return (
-    <View style={{ paddingHorizontal: layout.gutter, paddingTop: 8, paddingBottom: 14, gap: 6 }}>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: dot }} />
+    <View
+      style={{
+        paddingHorizontal: layout.gutter,
+        paddingTop: space.sm,
+        paddingBottom: space.md + space.hair,
+        gap: space.xs + space.hair,
+      }}
+    >
+      <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+        <View style={{ width: space.sm, height: space.sm, borderRadius: space.xs, backgroundColor: dot }} />
         <Txt variant="label" color={p.muted}>
           {STATUS_COPY[status]}
         </Txt>
@@ -63,7 +72,7 @@ function IdentityBar({ status }: { status: ChatConnectionStatus }) {
         </Txt>
       </View>
       {identity ? (
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: space.xs + space.hair }}>
           <Ionicons name="key-outline" size={12} color={p.muted} />
           <Muted numberOfLines={1}>{shortNpub(identity.npub)}</Muted>
         </View>
@@ -73,7 +82,7 @@ function IdentityBar({ status }: { status: ChatConnectionStatus }) {
           but anyone with the source can recompute it. Say so rather than
           letting it pass for a generated one. */}
       {identity?.source === "derived" ? (
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: space.xs + space.hair }}>
           <Ionicons name="warning-outline" size={12} color={p.danger} />
           <Muted numberOfLines={2} style={{ flex: 1 }}>
             This device couldn&apos;t store a private key, so chat is using a fallback identity.
@@ -84,9 +93,23 @@ function IdentityBar({ status }: { status: ChatConnectionStatus }) {
   )
 }
 
-/* ------------------------------------------------------------------ row */
+/* ---------------------------------------------------------- channel row */
 
-function ChannelRow({ summary, onPress }: { summary: ChannelSummary; onPress: () => void }) {
+const CHANNEL_AVATAR = 44
+
+/** Aligned with the channel name rather than the screen edge — see the same
+ * treatment on the people list. */
+function ChannelSeparator() {
+  return <Divider inset={layout.gutter + CHANNEL_AVATAR + space.md} />
+}
+
+const ChannelRow = React.memo(function ChannelRow({
+  summary,
+  onPress,
+}: {
+  summary: ChannelSummary
+  onPress: (id: string) => void
+}) {
   const p = usePalette()
   const { channel, lastMessage, unread } = summary
 
@@ -95,26 +118,26 @@ function ChannelRow({ summary, onPress }: { summary: ChannelSummary; onPress: ()
     : (channel.topic ?? "No messages yet")
 
   return (
-    <Pressable
+    <Touchable
       accessibilityRole="button"
-      onPress={onPress}
-      style={({ pressed }) => ({
+      accessibilityLabel={channel.name}
+      onPress={() => onPress(channel.id)}
+      style={{
         flexDirection: "row",
         alignItems: "center",
-        gap: 12,
+        gap: space.md,
         paddingHorizontal: layout.gutter,
-        paddingVertical: 14,
-        backgroundColor: pressed ? p.surface : "transparent",
-      })}
+        paddingVertical: space.md + space.hair,
+      }}
     >
       {channel.kind === "dm" ? (
-        <Avatar uri={channel.avatarUrl} name={channel.name} size={44} />
+        <Avatar uri={channel.avatarUrl} name={channel.name} size={CHANNEL_AVATAR} />
       ) : (
         <View
           style={{
-            width: 44,
-            height: 44,
-            borderRadius: 22,
+            width: CHANNEL_AVATAR,
+            height: CHANNEL_AVATAR,
+            borderRadius: CHANNEL_AVATAR / 2,
             alignItems: "center",
             justifyContent: "center",
             backgroundColor: p.input,
@@ -130,8 +153,8 @@ function ChannelRow({ summary, onPress }: { summary: ChannelSummary; onPress: ()
         </View>
       )}
 
-      <View style={{ flex: 1, gap: 3 }}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+      <View style={{ flex: 1, gap: space.hair }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
           <Txt variant="heading" numberOfLines={1} style={{ flex: 1 }}>
             {channel.name}
           </Txt>
@@ -148,59 +171,49 @@ function ChannelRow({ summary, onPress }: { summary: ChannelSummary; onPress: ()
       </View>
 
       {unread ? (
-        <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: p.accent }} />
+        <View style={{ width: space.sm + 1, height: space.sm + 1, borderRadius: 5, backgroundColor: p.accent }} />
       ) : (
         <Ionicons name="chevron-forward" size={16} color={p.border} />
       )}
-    </Pressable>
+    </Touchable>
   )
-}
+})
 
-/* --------------------------------------------------------------- screen */
-
-export default function ChatScreen() {
-  const router = useRouter()
-  const { session } = useAuth()
-  const { summaries, loading, error, status } = useChannels()
-
-  const open = useCallback(
-    (id: string) => router.push({ pathname: "/chat/[id]", params: { id } }),
-    [router],
-  )
-
+/**
+ * The channel list, as its own segment.
+ *
+ * `not-a-member` used to replace the whole chat tab with the invite flow.
+ * Now it only replaces this segment: DMs and the People directory don't need
+ * relay membership at all (see `PeopleList` in `src/chat/people-list.tsx`),
+ * so someone browsing the community shouldn't be forced through an invite
+ * gate just because they haven't touched the channel list yet.
+ */
+function ChannelsSegment({
+  summaries,
+  loading,
+  error,
+  status,
+  onOpen,
+}: {
+  summaries: ChannelSummary[]
+  loading: boolean
+  error: string | null
+  status: ChatConnectionStatus
+  onOpen: (id: string) => void
+}) {
   const renderItem = useCallback(
-    ({ item }: { item: ChannelSummary }) => (
-      <ChannelRow summary={item} onPress={() => open(item.channel.id)} />
-    ),
-    [open],
+    ({ item }: { item: ChannelSummary }) => <ChannelRow summary={item} onPress={onOpen} />,
+    [onOpen],
   )
-
-  // Without a session there is no keypair, so there is nothing to connect with
-  // and no rooms to list. Explain that instead of rendering an empty list.
-  if (!session) return <SignInPrompt />
 
   // Closed relay, and this key isn't a member yet. Nothing will ever load
   // until an invite is redeemed, so show the way in rather than an empty list
   // or a misleading "offline".
-  if (status === "not-a-member") {
-    return (
-      <View style={{ flex: 1 }}>
-        <IdentityBar status={status} />
-        <JoinCommunity relayUrl={RELAY_URL} />
-      </View>
-    )
-  }
+  if (status === "not-a-member") return <JoinCommunity relayUrl={RELAY_URL} />
 
   // A relay error is not fatal — the rooms still exist and the socket keeps
   // retrying — so only show the error state when we have nothing to list.
-  if (error && !summaries.length) {
-    return (
-      <View style={{ flex: 1 }}>
-        <IdentityBar status={status} />
-        <ErrorState error={new Error(error)} />
-      </View>
-    )
-  }
+  if (error && !summaries.length) return <ErrorState error={new Error(error)} />
 
   if (loading && !summaries.length) return <Loading label="Opening chat…" />
 
@@ -209,7 +222,6 @@ export default function ChatScreen() {
       data={summaries}
       keyExtractor={(item) => item.channel.id}
       renderItem={renderItem}
-      ListHeaderComponent={<IdentityBar status={status} />}
       // Defensive: with a session the built-in rooms always populate this list,
       // so an empty render means something upstream failed. Never leave the
       // screen blank under the status bar.
@@ -230,9 +242,58 @@ export default function ChatScreen() {
           />
         )
       }
-      ItemSeparatorComponent={Divider}
-      contentContainerStyle={{ paddingBottom: 24 }}
+      ItemSeparatorComponent={ChannelSeparator}
+      contentContainerStyle={{ paddingBottom: space.xxl - space.xs }}
       keyboardShouldPersistTaps="handled"
     />
+  )
+}
+
+/* --------------------------------------------------------------- screen */
+
+type ChatTab = "channels" | "people"
+
+const SEGMENTS: { value: ChatTab; label: string }[] = [
+  { value: "channels", label: "Channels" },
+  { value: "people", label: "People" },
+]
+
+export default function ChatScreen() {
+  const router = useRouter()
+  const { session } = useAuth()
+  const { summaries, loading, error, status } = useChannels()
+  const [tab, setTab] = useState<ChatTab>("channels")
+
+  const openChannel = useCallback(
+    (id: string) => router.push({ pathname: "/chat/[id]", params: { id } }),
+    [router],
+  )
+  // A person's `users.id` resolves to the same route: `resolveChannel` in
+  // src/chat/nostr.ts falls through to the users table when the id isn't a
+  // known channel or an event_users row, and turns it into a DM.
+  const openPerson = openChannel
+
+  // Without a session there is no keypair, so there is nothing to connect with
+  // and no rooms to list. Explain that instead of rendering an empty list.
+  if (!session) return <SignInPrompt />
+
+  return (
+    <View style={{ flex: 1 }}>
+      <IdentityBar status={status} />
+      <View style={{ paddingBottom: space.sm + space.hair }}>
+        <SegmentedControl options={SEGMENTS} value={tab} onChange={setTab} />
+      </View>
+      {tab === "people" ? (
+        <PeopleList onOpen={openPerson} />
+      ) : (
+        <ChannelsSegment
+          summaries={summaries}
+          loading={loading}
+          error={error}
+          status={status}
+          onOpen={openChannel}
+        />
+      )}
+    </View>
   )
 }

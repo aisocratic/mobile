@@ -1,19 +1,16 @@
-import { Ionicons } from "@expo/vector-icons"
 import { Image } from "expo-image"
 import { Stack, useLocalSearchParams } from "expo-router"
 import * as WebBrowser from "expo-web-browser"
 import React, { useCallback } from "react"
-import { Pressable, ScrollView, Share, StyleSheet, View } from "react-native"
+import { ScrollView, Share, StyleSheet, View } from "react-native"
 
 import { newsImage, newsShareUrl, useNewsItem, type NewsItem } from "@/api/news"
 import { Markdown } from "@/components/markdown"
-import { Button, Chip, ErrorState, Loading, Muted, Screen, Txt } from "@/components/ui"
+import { Button, Chip, ErrorState, IconButton, Loading, Muted, Screen, Txt } from "@/components/ui"
 import { formatDay } from "@/lib/format"
-import { layout, usePalette } from "@/theme"
+import { layout, motion, space, usePalette } from "@/theme"
 
 function ShareButton({ item }: { item: NewsItem | undefined }) {
-  const p = usePalette()
-
   const onPress = useCallback(() => {
     if (!item) return
     const url = newsShareUrl(item)
@@ -25,17 +22,16 @@ function ShareButton({ item }: { item: NewsItem | undefined }) {
     })
   }, [item])
 
+  // Rendered into the nav bar before the story has loaded, so it has to have a
+  // disabled look of its own rather than relying on the press state.
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel="Share this story"
-      onPress={onPress}
-      disabled={!item}
-      hitSlop={10}
-      style={({ pressed }) => ({ opacity: !item ? 0.4 : pressed ? 0.6 : 1 })}
-    >
-      <Ionicons name="share-outline" size={22} color={p.text} />
-    </Pressable>
+    <View style={{ opacity: item ? 1 : 0.4 }}>
+      <IconButton
+        icon="share-outline"
+        label="Share this story"
+        onPress={item ? onPress : undefined}
+      />
+    </View>
   )
 }
 
@@ -68,7 +64,7 @@ export default function NewsDetailScreen() {
         <Loading />
       ) : (
         <ScrollView
-          contentContainerStyle={{ padding: layout.gutter, paddingBottom: 48, gap: 16 }}
+          contentContainerStyle={{ padding: layout.gutter, paddingBottom: space.xxxl + space.sm, gap: space.lg }}
           showsVerticalScrollIndicator={false}
         >
           {cover ? (
@@ -83,19 +79,18 @@ export default function NewsDetailScreen() {
                 borderColor: p.border,
               }}
               contentFit="cover"
-              transition={180}
+              transition={motion.image}
+              cachePolicy="memory-disk"
             />
           ) : null}
 
-          <View style={{ gap: 8 }}>
-            <Txt variant="display" style={{ lineHeight: 36 }}>
-              {data.title ?? "Untitled"}
-            </Txt>
+          <View style={{ gap: space.sm }}>
+            <Txt variant="display">{data.title ?? "Untitled"}</Txt>
             {meta ? <Muted>{meta}</Muted> : null}
           </View>
 
           {data.categories?.length ? (
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.sm }}>
               {data.categories.map((c) => (
                 <Chip key={c} label={c} tone={data.type === "model" ? "accent" : "muted"} />
               ))}
@@ -112,7 +107,7 @@ export default function NewsDetailScreen() {
               variant="secondary"
               icon="open-outline"
               onPress={() => void WebBrowser.openBrowserAsync(link)}
-              style={{ marginTop: 8 }}
+              style={{ marginTop: space.sm }}
             />
           ) : null}
         </ScrollView>

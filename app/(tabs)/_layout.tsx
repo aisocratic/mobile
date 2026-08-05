@@ -5,7 +5,7 @@ import { StyleSheet } from "react-native"
 
 import { InviteButton } from "@/chat/invite-button"
 import { isEnabled } from "@/features"
-import { usePalette } from "@/theme"
+import { motion, usePalette } from "@/theme"
 
 /**
  * Every screen file in this directory becomes a tab whether it is listed here
@@ -15,6 +15,14 @@ import { usePalette } from "@/theme"
  *
  * Declaration order is tab order. See `src/features.ts`.
  */
+
+// The root layout's ErrorBoundary already covers the whole app, but it sits
+// above the tab bar — if it were the only one, a crash while reading a
+// Feed story would take the tab bar down with it and strand the tester on a
+// full-screen error with no way to switch to Chat or Profile and carry on.
+// A boundary here catches a screen crashing before that Stack/Tabs frame
+// unmounts, so the bar stays put and the rest of the app is still usable.
+export { ErrorBoundary } from "@/components/error-boundary"
 export default function TabsLayout() {
   const p = usePalette()
   const chat = isEnabled("chat")
@@ -38,6 +46,13 @@ export default function TabsLayout() {
         headerTitleStyle: { fontWeight: "700", fontSize: 20 },
         headerShadowVisible: false,
         sceneStyle: { backgroundColor: p.background },
+        // Tabs used to cut hard from one to the next. A cross-fade is the
+        // right amount for a bar you tap dozens of times a session: enough to
+        // register as a change, over before you'd call it an animation.
+        // Deliberately not "shift" — sliding whole screens sideways implies an
+        // ordering between Feed, Events and Chat that doesn't exist.
+        animation: "fade",
+        transitionSpec: { animation: "timing", config: { duration: motion.fast } },
       }}
     >
       <Tabs.Screen
@@ -49,22 +64,19 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="blog"
+        options={{
+          title: "Blog",
+          href: href(isEnabled("blog")),
+          tabBarIcon: ({ color, size }) => <Ionicons name="book" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="events"
         options={{
           title: "Events",
           href: href(isEnabled("events")),
           tabBarIcon: ({ color, size }) => <Ionicons name="calendar" size={size} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="connections"
-        options={{
-          title: "Connections",
-          // "Connections" truncates in the tab bar; the screen header keeps the
-          // full word.
-          tabBarLabel: "People",
-          href: href(isEnabled("connections")),
-          tabBarIcon: ({ color, size }) => <Ionicons name="people" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
@@ -85,6 +97,21 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="person-circle" size={size} color={color} />
           ),
+        }}
+      />
+      {/* Superseded by the People segment inside Chat, which shows the same
+          directory without the `event_attendance` dependency — see
+          src/api/connections.ts. Kept mounted so the flag can bring it back
+          without a rebuild of anything else; `href: null` just hides the tab. */}
+      <Tabs.Screen
+        name="connections"
+        options={{
+          title: "Connections",
+          // "Connections" truncates in the tab bar; the screen header keeps the
+          // full word.
+          tabBarLabel: "People",
+          href: href(isEnabled("connections")),
+          tabBarIcon: ({ color, size }) => <Ionicons name="people" size={size} color={color} />,
         }}
       />
     </Tabs>

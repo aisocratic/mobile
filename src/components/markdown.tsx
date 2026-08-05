@@ -68,6 +68,13 @@ function parse(markdown: string): Block[] {
       continue
     }
 
+    // An editor leaves a bare "#" behind when a heading is deleted; several
+    // live posts open with one. Text-less, it renders as a literal "#".
+    if (/^#{1,6}\s*$/.test(line.trim())) {
+      i++
+      continue
+    }
+
     const heading = line.match(/^(#{1,6})\s+(.*)$/)
     if (heading) {
       blocks.push({ kind: "heading", level: heading[1].length, text: heading[2].trim() })
@@ -106,6 +113,12 @@ function parse(markdown: string): Block[] {
     }
 
     // Paragraph: consume until a blank line or the start of another block.
+    // Single newlines are kept as line breaks rather than joined with a space.
+    // Strict markdown would join, but event bodies arrive from Luma as plain
+    // text where the newline *is* the structure — an agenda ("6:00 PM Welcome"
+    // / "7:00 PM Dialogues") joined into one run-on paragraph is unreadable,
+    // while web-authored blog paragraphs are one source line each and never
+    // notice the difference.
     const body: string[] = []
     while (
       i < lines.length &&
@@ -115,7 +128,7 @@ function parse(markdown: string): Block[] {
       body.push(lines[i].trim())
       i++
     }
-    if (body.length) blocks.push({ kind: "paragraph", text: body.join(" ") })
+    if (body.length) blocks.push({ kind: "paragraph", text: body.join("\n") })
   }
 
   return blocks

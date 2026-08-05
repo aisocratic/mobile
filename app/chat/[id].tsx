@@ -5,7 +5,6 @@ import {
   FlatList,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   StyleSheet,
   TextInput,
   View,
@@ -26,7 +25,8 @@ import { SignInPrompt } from "@/chat/sign-in-prompt"
 import { Avatar, EmptyState, ErrorState, Loading, Muted, Txt } from "@/components/ui"
 import { timeAgo } from "@/lib/format"
 import { useAuth } from "@/store/auth"
-import { layout, useIsDark, usePalette } from "@/theme"
+import { Touchable } from "@/components/touchable"
+import { layout, space, useIsDark, usePalette } from "@/theme"
 
 function fromEpoch(seconds: number): string {
   return timeAgo(new Date(seconds * 1000).toISOString())
@@ -52,28 +52,28 @@ function Bubble({ row }: { row: Row }) {
 
   if (message.mine) {
     return (
-      <View style={{ alignItems: "flex-end", paddingHorizontal: layout.gutter, marginTop: 2 }}>
+      <View style={{ alignItems: "flex-end", paddingHorizontal: layout.gutter, marginTop: space.hair }}>
         <View
           style={{
             maxWidth: "82%",
             backgroundColor: p.accent,
-            borderRadius: 18,
-            borderBottomRightRadius: showMeta ? 6 : 18,
-            paddingHorizontal: 14,
-            paddingVertical: 9,
+            borderRadius: layout.radius,
+            borderBottomRightRadius: showMeta ? space.xs + space.hair : layout.radius,
+            paddingHorizontal: space.md + space.hair,
+            paddingVertical: space.sm + 1,
             opacity: message.pending ? 0.65 : 1,
           }}
         >
-          <Txt variant="body" color={ownInk} style={{ lineHeight: 21 }}>
+          <Txt variant="body" color={ownInk}>
             {message.body}
           </Txt>
         </View>
         {message.failed ? (
-          <Txt variant="caption" color={p.danger} style={{ marginTop: 3, marginRight: 4 }}>
+          <Txt variant="caption" color={p.danger} style={{ marginTop: space.xs - 1, marginRight: space.xs }}>
             Not delivered
           </Txt>
         ) : showMeta ? (
-          <Muted style={{ marginTop: 3, marginRight: 4 }}>
+          <Muted style={{ marginTop: space.xs - 1, marginRight: space.xs }}>
             {message.pending ? "Sending…" : fromEpoch(message.createdAt)}
           </Muted>
         ) : null}
@@ -86,9 +86,9 @@ function Bubble({ row }: { row: Row }) {
       style={{
         flexDirection: "row",
         alignItems: "flex-end",
-        gap: 8,
+        gap: space.sm,
         paddingHorizontal: layout.gutter,
-        marginTop: showAuthor ? 12 : 2,
+        marginTop: showAuthor ? space.md : space.hair,
       }}
     >
       <View style={{ width: 28 }}>
@@ -98,7 +98,7 @@ function Bubble({ row }: { row: Row }) {
       </View>
       <View style={{ flex: 1, alignItems: "flex-start" }}>
         {showAuthor ? (
-          <Txt variant="caption" color={p.muted} style={{ marginBottom: 3, marginLeft: 4 }}>
+          <Txt variant="caption" color={p.muted} style={{ marginBottom: space.xs - 1, marginLeft: space.xs }}>
             {authorName}
           </Txt>
         ) : null}
@@ -108,17 +108,17 @@ function Bubble({ row }: { row: Row }) {
             backgroundColor: p.input,
             borderWidth: StyleSheet.hairlineWidth,
             borderColor: p.border,
-            borderRadius: 18,
-            borderBottomLeftRadius: showMeta ? 6 : 18,
-            paddingHorizontal: 14,
-            paddingVertical: 9,
+            borderRadius: layout.radius,
+            borderBottomLeftRadius: showMeta ? space.xs + space.hair : layout.radius,
+            paddingHorizontal: space.md + space.hair,
+            paddingVertical: space.sm + 1,
           }}
         >
-          <Txt variant="body" style={{ lineHeight: 21 }}>
+          <Txt variant="body">
             {message.body}
           </Txt>
         </View>
-        {showMeta ? <Muted style={{ marginTop: 3, marginLeft: 4 }}>{fromEpoch(message.createdAt)}</Muted> : null}
+        {showMeta ? <Muted style={{ marginTop: space.xs - 1, marginLeft: space.xs }}>{fromEpoch(message.createdAt)}</Muted> : null}
       </View>
     </View>
   )
@@ -155,8 +155,8 @@ function Composer({
         borderTopColor: p.border,
         backgroundColor: p.background,
         paddingHorizontal: layout.gutter,
-        paddingTop: 10,
-        gap: 6,
+        paddingTop: space.sm + space.hair,
+        gap: space.xs + space.hair,
       }}
     >
       {error ? (
@@ -164,7 +164,7 @@ function Composer({
           {error}
         </Txt>
       ) : null}
-      <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 8 }}>
+      <View style={{ flexDirection: "row", alignItems: "flex-end", gap: space.sm }}>
         <TextInput
           value={draft}
           onChangeText={setDraft}
@@ -179,30 +179,32 @@ function Composer({
             borderRadius: layout.radius,
             borderWidth: StyleSheet.hairlineWidth,
             borderColor: p.border,
-            paddingHorizontal: 14,
-            paddingTop: 11,
-            paddingBottom: 11,
+            paddingHorizontal: space.md + space.hair,
+            paddingTop: space.md - 1,
+            paddingBottom: space.md - 1,
             fontSize: 16,
             color: p.text,
           }}
         />
-        <Pressable
+        <Touchable
           accessibilityRole="button"
           accessibilityLabel="Send message"
           accessibilityState={{ disabled: !canSend }}
           onPress={canSend ? submit : undefined}
-          style={({ pressed }) => ({
+          disabled={!canSend}
+          haptic="light"
+          scale={0.9}
+          style={{
             width: 42,
             height: 42,
             borderRadius: 21,
             alignItems: "center",
             justifyContent: "center",
             backgroundColor: canSend ? p.accent : p.input,
-            opacity: pressed ? 0.8 : 1,
-          })}
+          }}
         >
           <Ionicons name="arrow-up" size={20} color={canSend ? "#0A0A0A" : p.muted} />
-        </Pressable>
+        </Touchable>
       </View>
     </View>
   )

@@ -87,20 +87,43 @@ src/
   chat/                       # Nostr chat adapter (see below)
   components/
     ui.tsx                    # design system: Txt, Card, Button, Field, Chip, Avatar, states…
+    touchable.tsx             # the app's one press interaction (scale + fade + haptics)
+    fade-in.tsx               # entrance animation, Reduce Motion aware
     markdown.tsx              # dependency-free markdown renderer for article bodies
     auth-form.tsx             # shared two-step passwordless form
+    error-boundary.tsx        # shared crash screen, mounted per route group
   lib/
     supabase.ts               # client + SecureStore-backed session storage
     query.ts                  # QueryClient
     format.ts                 # date/text helpers
+    reduce-motion.ts          # one shared Reduce Motion subscription for the app
   store/auth.tsx              # AuthProvider, useAuth()
-  theme.ts                    # brand palette, light + dark
+  theme.tsx                   # design tokens + ThemeProvider (see below)
   types.ts                    # row types transcribed from the live schema
 ```
 
 **Data flow.** Screens call hooks from `src/api/*`, which wrap TanStack Query around `supabase.from(...)` calls straight to PostgREST. There is no bespoke backend-for-frontend: the app is a first-class API client of the same database the website uses. Row Level Security is what separates public content from private.
 
 **Theming.** Every surface derives colour from `usePalette()`, which follows the OS light/dark setting. The palette is lifted from the website's design tokens — near-black `#0A0A0A` backgrounds with the amber accent (`#D97706` light / `#FBBF24` dark).
+
+`ThemeProvider` (mounted in `app/_layout.tsx`) holds the app's single `useColorScheme` subscription and everything below reads it through context. `usePalette` falls back to a direct, non-subscribing `Appearance` read when no provider is above it, which is what lets the crash screen render when the root layout itself is what threw.
+
+### Design tokens
+
+`src/theme.tsx` is the source of truth for more than colour, and screens are expected to reach for these rather than hand-picking numbers:
+
+| Token | What it settles |
+| --- | --- |
+| `space` | 4pt spacing scale (`xs` 4 → `huge` 56). Gaps, padding, margins |
+| `type` | Font size **and line height** per variant. Don't pass `lineHeight` at a call site unless you're also changing `fontSize` |
+| `layout` | Screen gutter and corner radii |
+| `motion` | Durations, the press scale, the stagger rhythm and its cap |
+
+**Motion.** Three pieces, and between them they cover everything that moves:
+
+- `Touchable` — the only press interaction in the app. A shallow scale plus a fade, driven natively, with optional haptics. Haptics are opt-in and stay off for navigation: a phone that buzzes on every row tap feels cheap, and iOS itself doesn't do it. `Button`, `IconButton` and moving a `SegmentedControl` selection are the exceptions.
+- `FadeIn` — entrances. Pass `index` and siblings arrive on the shared stagger rhythm, flattened past `motion.staggerCap` so a long list isn't still animating while you scroll it.
+- `useReduceMotion` / `useMayAnimate` — one probe and one OS listener for the whole app. Everything animated gates on it, and "don't know yet" means *don't animate and don't hide*, never `opacity: 0` while waiting for an answer.
 
 ---
 
@@ -110,18 +133,19 @@ Which sections exist in a build is a flag, not a branch — see `src/features.ts
 
 | Section | First release | Notes |
 | --- | --- | --- |
-| Feed | ✅ | Landing tab |
+| Feed | ✅ | Landing tab; news only |
+| Blog | ✅ | Essays and monthly digests; same screen as Feed with a different source |
 | Events | ✅ | |
-| Connections ("People") | ✅ | ⚠️ Returns an empty list for non-admin accounts — see limitation 4 |
+| Chat | ✅ | Channels + a **People** segment: the community directory, one tap from a DM |
 | Profile | ✅ | Holds sign-out; on by default so nobody is stranded signed in |
-| Chat | ❌ | Built and tested; needs the `chat_identities` migration applied and `BUZZ_OWNER_KEY` set |
+| Connections ("People") | ❌ | Superseded by chat's People segment. Its pipeline reads `event_attendance`, which RLS scopes to rows you already share — so it returned an empty list for every non-admin account (limitation 4) |
 
 Flip one with `EXPO_PUBLIC_FEATURES`, whose entries are **deltas** against those defaults so adding a feature later doesn't mean editing every deployment:
 
 ```bash
-EXPO_PUBLIC_FEATURES=chat            # turn chat back on
-EXPO_PUBLIC_FEATURES=-connections    # hide the People tab
-EXPO_PUBLIC_FEATURES=chat,-profile   # both, left to right
+EXPO_PUBLIC_FEATURES=connections     # bring the old Connections tab back
+EXPO_PUBLIC_FEATURES=-chat           # hide chat
+EXPO_PUBLIC_FEATURES=connections,-profile   # both, left to right
 ```
 
 A disabled section loses its **tab and its routes**. `href: null` takes it out of the tab bar; the guard in `app/_layout.tsx` catches everything that doesn't come through the bar — deep links, `aisocratic://invite/<code>`, the Message button on a member profile — and redirects to `homeRoute()`, which follows the flags rather than naming a tab. Switching off the landing tab moves the landing tab; it can't strand the app on a screen the build doesn't ship.
@@ -146,13 +170,15 @@ One deliberate constraint: `process.env.EXPO_PUBLIC_*` is *inlined by Metro at b
 > GOTRUE_URI_ALLOW_LIST: ${GOTRUE_URI_ALLOW_LIST:-https://aisocratic.org/**,http://localhost:**,aisocratic://**}
 > ```
 >
-> **✅ Applied to production on 2026-08-02.** The live value is now:
+> **✅ Applied to production on 2026-08-02** (`aisocratic://**`) **and 2026-08-03** (`exp://**`). The live value is now:
 >
 > ```
-> GOTRUE_URI_ALLOW_LIST=https://aisocratic.org/**,https://meet.aisocratic.org/**,http://localhost:**,aisocratic://**
+> GOTRUE_URI_ALLOW_LIST=https://aisocratic.org/**,https://meet.aisocratic.org/**,http://localhost:**,aisocratic://**,exp://**
 > ```
 >
-> The compose default was **not** what governed this. Production sets the variable explicitly at **`/opt/aisocratic/.env:50`**, which overrides `${VAR:-default}` — so that file is the one to edit, and the compose change alone would have been a no-op. A timestamped backup (`.env.bak-*-pre-mobile-oauth`) sits next to it, and the `auth` container was recreated. `exp://**` was deliberately left off; the development build removes the need for it.
+> The compose default was **not** what governed this. Production sets the variable explicitly at **`/opt/aisocratic/.env:50`**, which overrides `${VAR:-default}` — so that file is the one to edit, and the compose change alone would have been a no-op. Timestamped backups (`.env.bak-*-pre-mobile-oauth`, `.env.bak-*-pre-expo-go-oauth`) sit next to it, and the `auth` container was recreated each time.
+>
+> `exp://**` is what lets Google sign-in return to **Expo Go** — without it the browser finishes the login on aisocratic.org and the app never hears back. It's safe enough to leave (the PKCE code verifier never leaves the initiating device, so a hijacked redirect yields nothing exchangeable), but it exists for Expo Go testing only; once testing moves to the dev build, dropping it back off the list is one line and one `docker compose up -d auth`.
 >
 > Should this ever need redoing, per `website/DEPLOY.md` the stack is Docker Compose on Hetzner at `/opt/aisocratic`:
 >
@@ -197,15 +223,13 @@ That action is deliberately a normal in-flow button rather than a floating ✕. 
 
 Times are rendered in the **event's** timezone (rows carry an IANA `timezone`), not the device's.
 
-### Feed
-News and the blog are two tables but one reading surface. `src/api/feed.ts` normalises both into a single `FeedItem` and merges them newest-first; the tab carries two filter rows — source (**All / News / Blog**) and topic — and the topic row is the union of both sides' categories, deduplicated case-insensitively.
+### Feed & Blog
+Two tabs, one screen: `src/components/story-stream.tsx` renders a hero card, rows, a topic filter and pull-to-refresh for whichever `source` a tab hands it. **Feed** is the news; **Blog** is the essays and monthly digests. They used to share one tab behind a source filter (All / News / Blog), which buried the news whenever a long-form post outdated it.
 
-- `updates` table — the website renamed this surface to "News" in July 2026 but the table kept its old name. Paged 20 at a time, category filtered server-side; link-only items open their source directly instead of an empty reader.
-- `blog_posts` table — 31 posts, fetched whole and filtered client-side, read through the in-house markdown renderer.
+- `updates` table (Feed) — the website renamed this surface to "News" in July 2026 but the table kept its old name. Paged 20 at a time, category filtered server-side; link-only items open their source directly instead of an empty reader.
+- `blog_posts` table (Blog) — 31 posts, fetched whole and filtered client-side, read through the in-house markdown renderer.
 
-The two paginate differently, which the merge has to absorb: the blog arrives in one request while news is paged, so a blog post older than the last loaded news item is held back until news catches up with it. Without that cutoff every new page of news would insert rows *above* posts the reader had already scrolled past.
-
-Selecting **News** or **Blog** disables the other query rather than filtering its results, so a single-source view costs a single request. The top item renders as a hero card; the rest as rows tagged with their source.
+`src/api/feed.ts` still normalises both tables into a single `FeedItem` and can merge them — each tab just asks for one source, which disables the other query entirely, so a tab costs a single request. The merge path (and its held-back-blog-post cutoff for mixed pagination) stays for any future combined view.
 
 ### Connections
 The list of people you've met at AI Socratic events, with the role each of you had — **host** or **guest**.
@@ -229,7 +253,7 @@ Two things the live data forced:
 
 ### Chat
 
-> **Off in the first release** (`src/features.ts`). Everything below is built and tested; it needs the `chat_identities` migration applied and `BUZZ_OWNER_KEY` set on the server. Re-enable with `EXPO_PUBLIC_FEATURES=chat`.
+> **Shipping in the first release.** The `chat_identities` migration is applied to production (2026-08-02) and a chat account registers on first launch — verified end to end. The community **owner key is configured on the server**, and it mints real invites: a NIP-98 request signed with it returns `200` and a live single-use code. What remains is deploying `/api/buzz/join` so the app can reach it; until then the app falls back to the pasted-code flow.
 
 Chat doesn't exist on the website. The brief said to use **buzz.xyz** — so first, what buzz.xyz actually is:
 
@@ -397,4 +421,5 @@ Pointing at a different Buzz community is one line and no code change — `EXPO_
 - `@/*` path alias maps to `src/*`.
 - Screens stay presentational; all PostgREST access lives in `src/api/*`.
 - Every list handles loading, empty and error states explicitly — the shared `Loading`, `EmptyState` and `ErrorState` components exist so no screen ships a blank spinner.
+- Spacing comes from `space`, line height comes from `type`, and anything tappable is a `Touchable`. Hand-rolled `Pressable` press states are how the app ended up with ten different press opacities.
 - Production data is full of nulls. Assume every column is nullable and normalize at the API layer.

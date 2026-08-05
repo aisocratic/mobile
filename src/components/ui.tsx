@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons"
 import { Image } from "expo-image"
-import React from "react"
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ActivityIndicator,
   Pressable,
@@ -14,7 +14,9 @@ import {
   type ViewProps,
 } from "react-native"
 
-import { layout, usePalette, type as typeScale } from "@/theme"
+import { FadeIn } from "@/components/fade-in"
+import { fire, Touchable } from "@/components/touchable"
+import { layout, motion, space, usePalette, type as typeScale } from "@/theme"
 
 /* ------------------------------------------------------------------ text */
 
@@ -35,6 +37,33 @@ export function Muted({ style, ...rest }: TextProps & { variant?: Variant }) {
   return <Txt variant="caption" color={p.muted} style={style} {...rest} />
 }
 
+/**
+ * Small all-caps rule label — "MORE STORIES", "HOSTS". Section headings were
+ * being spelled out with a `Txt variant="label"` plus the same three style
+ * overrides on four different screens; two of them had drifted to a different
+ * letter-spacing.
+ */
+export function SectionLabel({
+  children,
+  color,
+  style,
+}: {
+  children: React.ReactNode
+  color?: string
+  style?: TextProps["style"]
+}) {
+  const p = usePalette()
+  return (
+    <Txt
+      variant="label"
+      color={color ?? p.muted}
+      style={[{ fontSize: 11, textTransform: "uppercase", letterSpacing: 1 }, style]}
+    >
+      {children}
+    </Txt>
+  )
+}
+
 /* ---------------------------------------------------------------- layout */
 
 export function Screen({ style, ...rest }: ViewProps) {
@@ -52,7 +81,7 @@ export function Card({ style, ...rest }: ViewProps) {
           borderColor: p.border,
           borderWidth: StyleSheet.hairlineWidth,
           borderRadius: layout.radius,
-          padding: 16,
+          padding: space.lg,
         },
         style,
       ]}
@@ -61,9 +90,13 @@ export function Card({ style, ...rest }: ViewProps) {
   )
 }
 
-export function Divider() {
+export function Divider({ inset = 0 }: { inset?: number }) {
   const p = usePalette()
-  return <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: p.border }} />
+  return (
+    <View
+      style={{ height: StyleSheet.hairlineWidth, backgroundColor: p.border, marginLeft: inset }}
+    />
+  )
 }
 
 /* --------------------------------------------------------------- buttons */
@@ -94,21 +127,25 @@ export function Button({
   const off = disabled || loading
 
   return (
-    <Pressable
+    <Touchable
       accessibilityRole="button"
       accessibilityState={{ disabled: !!off, busy: !!loading }}
-      onPress={off ? undefined : onPress}
-      style={({ pressed }) => [
+      onPress={onPress}
+      disabled={off}
+      // A button is a commitment, unlike a row that just navigates — this is
+      // the one place a tap is worth feeling.
+      haptic="light"
+      style={[
         {
           backgroundColor: bg,
           borderRadius: layout.radiusSmall,
-          paddingVertical: 14,
-          paddingHorizontal: 18,
+          paddingVertical: space.lg - 2,
+          paddingHorizontal: space.lg + space.hair,
           flexDirection: "row",
           alignItems: "center",
           justifyContent: "center",
-          gap: 8,
-          opacity: off ? 0.5 : pressed ? 0.8 : 1,
+          gap: space.sm,
+          opacity: off ? 0.5 : 1,
           borderWidth: isGhost ? StyleSheet.hairlineWidth : 0,
           borderColor: p.border,
         },
@@ -125,7 +162,42 @@ export function Button({
           </Txt>
         </>
       )}
-    </Pressable>
+    </Touchable>
+  )
+}
+
+/**
+ * A bare tappable icon — nav-bar actions, the close on a sheet. Gives them all
+ * the same 44pt target and the same press response, which hand-rolled
+ * `Pressable`s with `hitSlop={12}` were not doing consistently.
+ */
+export function IconButton({
+  icon,
+  onPress,
+  label,
+  color,
+  size = 22,
+}: {
+  icon: keyof typeof Ionicons.glyphMap
+  onPress?: () => void
+  label: string
+  color?: string
+  size?: number
+}) {
+  const p = usePalette()
+  return (
+    <Touchable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={onPress}
+      haptic="light"
+      hitSlop={space.md}
+      scale={0.9}
+      activeOpacity={0.6}
+      style={{ padding: space.xs, alignItems: "center", justifyContent: "center" }}
+    >
+      <Ionicons name={icon} size={size} color={color ?? p.text} />
+    </Touchable>
   )
 }
 
@@ -135,11 +207,15 @@ export function Field({
   label,
   error,
   style,
+  onFocus,
+  onBlur,
   ...rest
 }: TextInputProps & { label?: string; error?: string | null }) {
   const p = usePalette()
+  const [focused, setFocused] = useState(false)
+
   return (
-    <View style={{ gap: 6 }}>
+    <View style={{ gap: space.xs + space.hair }}>
       {label ? (
         <Txt variant="label" color={p.muted}>
           {label}
@@ -147,14 +223,27 @@ export function Field({
       ) : null}
       <TextInput
         placeholderTextColor={p.muted}
+        // Destructured out of `rest` on purpose: spreading `rest` below would
+        // otherwise put the caller's handler back over these and the focus
+        // ring would never light up.
+        onFocus={(e) => {
+          setFocused(true)
+          onFocus?.(e)
+        }}
+        onBlur={(e) => {
+          setFocused(false)
+          onBlur?.(e)
+        }}
         style={[
           {
             backgroundColor: p.input,
             borderRadius: layout.radiusSmall,
             borderWidth: StyleSheet.hairlineWidth,
-            borderColor: error ? p.danger : p.border,
-            paddingHorizontal: 14,
-            paddingVertical: 13,
+            // The focused ring is the only affordance telling you which field
+            // the keyboard is pointed at once more than one is on screen.
+            borderColor: error ? p.danger : focused ? p.accent : p.border,
+            paddingHorizontal: space.md + space.hair,
+            paddingVertical: space.md + 1,
             fontSize: 16,
             color: p.text,
           },
@@ -179,8 +268,8 @@ export function Chip({ label, tone }: { label: string; tone?: "accent" | "muted"
   return (
     <View
       style={{
-        paddingHorizontal: 10,
-        paddingVertical: 4,
+        paddingHorizontal: space.sm + space.hair,
+        paddingVertical: space.xs,
         borderRadius: layout.radiusPill,
         backgroundColor: accent ? `${p.accent}22` : p.input,
         borderWidth: StyleSheet.hairlineWidth,
@@ -194,6 +283,14 @@ export function Chip({ label, tone }: { label: string; tone?: "accent" | "muted"
   )
 }
 
+type Measured = { x: number; width: number; height: number }
+
+/**
+ * A horizontal filter bar. The selection changes instantly — this control used
+ * to slide a pill between options, and on a row you retap several times in a
+ * row the travel read as lag, not polish. Frames are still measured, but only
+ * to keep the selected chip scrolled into view on rows wider than the screen.
+ */
 export function SegmentedControl<T extends string>({
   options,
   value,
@@ -204,11 +301,35 @@ export function SegmentedControl<T extends string>({
   onChange: (v: T) => void
 }) {
   const p = usePalette()
+  const scroller = useRef<ScrollView>(null)
+  const [frames, setFrames] = useState<Record<string, Measured>>({})
+
+  const onLayoutOption = useCallback((key: string, frame: Measured) => {
+    setFrames((prev) => {
+      const known = prev[key]
+      if (known && known.x === frame.x && known.width === frame.width) return prev
+      return { ...prev, [key]: frame }
+    })
+  }, [])
+
+  const target = frames[value]
+
+  // Keep the selection reachable: on Feed the topic list is far wider than the
+  // screen, and selecting the last chip used to leave it half off the edge.
+  useEffect(() => {
+    if (!target) return
+    scroller.current?.scrollTo({
+      x: Math.max(0, target.x - layout.gutter * 2),
+      animated: false,
+    })
+  }, [target])
+
   return (
     <ScrollView
+      ref={scroller}
       horizontal
       showsHorizontalScrollIndicator={false}
-      contentContainerStyle={{ gap: 8, paddingHorizontal: layout.gutter }}
+      contentContainerStyle={{ gap: space.sm, paddingHorizontal: layout.gutter }}
     >
       {options.map((o) => {
         const active = o.value === value
@@ -217,10 +338,17 @@ export function SegmentedControl<T extends string>({
             key={o.value}
             accessibilityRole="tab"
             accessibilityState={{ selected: active }}
-            onPress={() => onChange(o.value)}
+            onPress={() => {
+              // The one gesture iOS itself gives a haptic to: moving a
+              // selection. Skipped when you tap the option already selected,
+              // which produces no movement to feel.
+              if (!active) fire("selection")
+              onChange(o.value)
+            }}
+            onLayout={(e) => onLayoutOption(o.value, e.nativeEvent.layout)}
             style={{
-              paddingHorizontal: 14,
-              paddingVertical: 8,
+              paddingHorizontal: space.md + space.hair,
+              paddingVertical: space.sm,
               borderRadius: layout.radiusPill,
               backgroundColor: active ? p.primary : p.input,
               borderWidth: StyleSheet.hairlineWidth,
@@ -249,12 +377,16 @@ export function Avatar({
   size?: number
 }) {
   const p = usePalette()
-  const initials = (name ?? "?")
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((w) => w[0]?.toUpperCase())
-    .join("")
+  const initials = useMemo(
+    () =>
+      (name ?? "?")
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((w) => w[0]?.toUpperCase())
+        .join(""),
+    [name],
+  )
 
   if (uri) {
     return (
@@ -262,7 +394,8 @@ export function Avatar({
         source={{ uri }}
         style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: p.input }}
         contentFit="cover"
-        transition={150}
+        transition={motion.image}
+        cachePolicy="memory-disk"
       />
     )
   }
@@ -280,7 +413,7 @@ export function Avatar({
         borderColor: p.border,
       }}
     >
-      <Txt variant="label" color={p.muted}>
+      <Txt variant="label" color={p.muted} style={size < 32 ? { fontSize: 10 } : undefined}>
         {initials || "?"}
       </Txt>
     </View>
@@ -292,7 +425,15 @@ export function Avatar({
 export function Loading({ label }: { label?: string }) {
   const p = usePalette()
   return (
-    <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 12, padding: 40 }}>
+    <View
+      style={{
+        flex: 1,
+        alignItems: "center",
+        justifyContent: "center",
+        gap: space.md,
+        padding: space.xxxl,
+      }}
+    >
       <ActivityIndicator color={p.accent} />
       {label ? <Muted>{label}</Muted> : null}
     </View>
@@ -312,18 +453,40 @@ export function EmptyState({
 }) {
   const p = usePalette()
   return (
-    <View style={{ alignItems: "center", gap: 10, paddingVertical: 56, paddingHorizontal: 32 }}>
-      <Ionicons name={icon} size={34} color={p.muted} />
+    // An empty state is always a small disappointment; letting it settle in
+    // rather than snap in takes the edge off. The icon gets a soft plate so it
+    // reads as a considered state and not as a missing image.
+    <FadeIn
+      style={{
+        alignItems: "center",
+        gap: space.sm + space.hair,
+        paddingVertical: space.huge,
+        paddingHorizontal: space.xxl + space.xs,
+      }}
+    >
+      <View
+        style={{
+          width: space.huge,
+          height: space.huge,
+          borderRadius: space.huge / 2,
+          backgroundColor: p.input,
+          alignItems: "center",
+          justifyContent: "center",
+          marginBottom: space.xs,
+        }}
+      >
+        <Ionicons name={icon} size={26} color={p.muted} />
+      </View>
       <Txt variant="heading" style={{ textAlign: "center" }}>
         {title}
       </Txt>
       {body ? (
-        <Txt variant="body" color={p.muted} style={{ textAlign: "center", lineHeight: 21 }}>
+        <Txt variant="body" color={p.muted} style={{ textAlign: "center" }}>
           {body}
         </Txt>
       ) : null}
-      {action ? <View style={{ marginTop: 8 }}>{action}</View> : null}
-    </View>
+      {action ? <View style={{ marginTop: space.sm }}>{action}</View> : null}
+    </FadeIn>
   )
 }
 

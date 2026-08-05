@@ -73,7 +73,7 @@ export default function AuthCallback() {
     <Screen>
       <View style={{ flex: 1, justifyContent: "center", gap: 14, padding: layout.gutter + 8 }}>
         <Txt variant="title">Sign-in didn't complete</Txt>
-        <Txt variant="body" color={p.muted} style={{ lineHeight: 21 }}>
+        <Txt variant="body" color={p.muted} >
           {error}
         </Txt>
         <Button label="Back to sign in" onPress={() => router.replace("/(auth)/welcome")} />
