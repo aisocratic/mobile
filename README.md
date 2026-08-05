@@ -423,3 +423,7 @@ Pointing at a different Buzz community is one line and no code change — `EXPO_
 - Every list handles loading, empty and error states explicitly — the shared `Loading`, `EmptyState` and `ErrorState` components exist so no screen ships a blank spinner.
 - Spacing comes from `space`, line height comes from `type`, and anything tappable is a `Touchable`. Hand-rolled `Pressable` press states are how the app ended up with ten different press opacities.
 - Production data is full of nulls. Assume every column is nullable and normalize at the API layer.
+
+## License
+
+MIT — see [LICENSE](LICENSE). The AI Socratic name, logo, app icon, and the media under `assets/` are all rights reserved and not covered by the MIT grant.
