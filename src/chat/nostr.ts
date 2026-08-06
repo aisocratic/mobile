@@ -40,7 +40,8 @@ import {
   mintInvite,
   BuzzApiError,
 } from "./buzz"
-import { lookupPubkey, registerChatIdentity } from "./directory"
+import { forgetPeer, lookupPubkey, registerChatIdentity } from "./directory"
+import { discoveredDmChannel, isHexPubkey } from "./dm-discovery"
 import { estimateClockSkew, publishWrappedDm } from "./dm-send"
 import { buildRumor, rumorPeer, unwrapGift } from "./nip17"
 import {
@@ -590,6 +591,11 @@ class NostrChatAdapter implements ChatAdapter {
     const known = [...this.knownChannels.values()].find((c) => c.id === routeId)
     if (known) return known
 
+    // A thread discovered from an incoming gift wrap routes by the sender's
+    // pubkey itself — there may be no users row behind it to look up, and
+    // querying PostgREST's uuid columns with 64 hex chars would only error.
+    if (isHexPubkey(routeId)) return discoveredDmChannel(routeId)
+
     const caps = await this.capabilities()
     if (caps.groups === "nip28") {
       const builtin = BUILTIN_CHANNELS.find((c) => c.id === routeId)
@@ -610,6 +616,10 @@ class NostrChatAdapter implements ChatAdapter {
     const row = (data as EventUserRow | null) ?? null
     if (row) {
       const identityId = row.user_id ?? row.id
+      // Opening a conversation is rare and addressing it at a stale key is
+      // fatal (the relay accepts wraps to any key, so nothing ever bounces).
+      // Drop the session cache and ask the directory again every time.
+      forgetPeer(identityId)
       return {
         id: routeId,
         kind: "dm",
@@ -631,6 +641,7 @@ class NostrChatAdapter implements ChatAdapter {
       .maybeSingle()
 
     if (!userRow) return null
+    forgetPeer(routeId)
     const u = userRow as {
       id: string
       full_name: string | null
@@ -658,6 +669,7 @@ class NostrChatAdapter implements ChatAdapter {
       onMessages: (messages: ChatMessage[]) => void
       onReady?: () => void
       onError?: (message: string) => void
+      onDiscovered?: (channel: ChatChannel) => void
     },
     limitPerChannel = 50,
   ): ChatSubscription {
@@ -746,9 +758,18 @@ class NostrChatAdapter implements ChatAdapter {
           setTimeout(flush, 30)
         }
 
+        // Peers whose first message arrived before any thread existed for
+        // them, announced at most once per subscription.
+        const discovered = new Set<string>()
+        const onNewPeer = (peer: string) => {
+          if (discovered.has(peer)) return
+          discovered.add(peer)
+          handlers.onDiscovered?.(discoveredDmChannel(peer))
+        }
+
         inner = this.relay.subscribe(capped, {
           onEvent: (event) => {
-            const message = this.toMessage(event, sk, me, caps, roomByAddress, dmByPeer)
+            const message = this.toMessage(event, sk, me, caps, roomByAddress, dmByPeer, onNewPeer)
             if (message) push(message)
           },
           onEose: () => {
@@ -785,6 +806,7 @@ class NostrChatAdapter implements ChatAdapter {
     caps: RelayCapabilities,
     roomByAddress: Map<string, string>,
     dmByPeer: Map<string, string>,
+    onNewPeer?: (peer: string) => void,
   ): ChatMessage | null {
     if (!verifyEvent(event)) return null
 
@@ -809,8 +831,16 @@ class NostrChatAdapter implements ChatAdapter {
       const rumor = unwrapGift(event, sk)
       if (!rumor) return null
       const peer = rumorPeer(rumor, me)
-      const channelId = peer ? dmByPeer.get(peer) : undefined
-      if (!channelId) return null
+      if (!peer) return null
+      let channelId = dmByPeer.get(peer)
+      if (!channelId) {
+        // First contact: no thread exists for this peer. Route the message by
+        // the peer's key and announce the thread, instead of dropping the one
+        // message that would have started the conversation. (This was how the
+        // first DM anyone ever sent you silently vanished.)
+        channelId = peer
+        onNewPeer?.(peer)
+      }
       return {
         id: rumor.id,
         channelId,

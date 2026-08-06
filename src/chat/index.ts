@@ -188,6 +188,8 @@ function useMessageFeed(
   limitPerChannel: number,
 ): { ready: boolean; error: string | null } {
   const adapter = useChatAdapter()
+  const { user } = useAuth()
+  const userId = user?.id ?? null
   const [ready, setReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -211,13 +213,23 @@ function useMessageFeed(
           setError(message)
           setReady(true)
         },
+        // A DM from someone no open thread covers — the first message of a new
+        // conversation. Persist the thread so it appears in the channel list;
+        // the message itself already arrived through onMessages under the
+        // discovered channel's id. `loadThreads` first: discovery can outrun
+        // the initial thread load, and remembering into an unloaded list
+        // would overwrite everything persisted before it.
+        onDiscovered: (channel) => {
+          if (!userId) return
+          void loadThreads(userId).then(() => rememberThread(userId, channel))
+        },
       },
       limitPerChannel,
     )
 
     return () => subscription.close()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [adapter, signature, limitPerChannel])
+  }, [adapter, userId, signature, limitPerChannel])
 
   return { ready, error }
 }

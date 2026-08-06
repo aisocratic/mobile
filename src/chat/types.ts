@@ -219,6 +219,12 @@ export type ChatAdapter = {
   /**
    * Live subscription across one or more channels: backfills recent history,
    * then streams new messages. One relay REQ covers the whole set.
+   *
+   * `onDiscovered` fires when a DM arrives from a peer no channel in
+   * `channels` covers — the first message of a brand-new conversation. The
+   * message itself is delivered through `onMessages` under the discovered
+   * channel's id; the callback exists so the caller can persist the thread
+   * and show it, rather than the message landing in a channel no list knows.
    */
   subscribeMessages(
     channels: ChatChannel[],
@@ -226,6 +232,7 @@ export type ChatAdapter = {
       onMessages: (messages: ChatMessage[]) => void
       onReady?: () => void
       onError?: (message: string) => void
+      onDiscovered?: (channel: ChatChannel) => void
     },
     limitPerChannel?: number,
   ): ChatSubscription

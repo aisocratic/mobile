@@ -1,4 +1,5 @@
 import {
+  dedupeCommunityMembers,
   fetchCommunityMembers,
   filterCommunityMembers,
   matchesMemberSearch,
@@ -26,10 +27,18 @@ type Row = {
 
 let mockRows: Row[] = []
 let mockError: { message: string } | null = null
+let mockIdentityRows: { user_id: string | null }[] = []
 
 jest.mock("@/lib/supabase", () => ({
   supabase: {
-    from(_table: string) {
+    from(table: string) {
+      // `chat_identities` is a flat read — resolve it directly so the
+      // reachability lookup in fetchReachableUserIds sees realistic rows.
+      if (table === "chat_identities") {
+        return {
+          select: () => Promise.resolve({ data: mockIdentityRows, error: null }),
+        }
+      }
       const state: {
         neq: [string, unknown][]
         notNull: string[]
@@ -96,6 +105,7 @@ function row(overrides: Partial<Row> & { id: string }): Row {
 beforeEach(() => {
   mockRows = []
   mockError = null
+  mockIdentityRows = []
 })
 
 describe("fetchCommunityMembers", () => {
@@ -149,6 +159,67 @@ describe("fetchCommunityMembers", () => {
     mockError = { message: "network unreachable" }
 
     await expect(fetchCommunityMembers(VIEWER)).rejects.toThrow("network unreachable")
+  })
+
+  it("drops same-name rows without a chat identity when a reachable row exists", async () => {
+    // Production reality: the same human appears as several users rows (old
+    // sign-ups, imports), only one of which has a registered chat key. The
+    // others resolve to derived keys nobody holds — DMs to them vanish.
+    mockRows = [
+      row({ id: "fed-old", full_name: "Federico Ulfo" }),
+      row({ id: "fed-live", full_name: "Federico Ulfo" }),
+      row({ id: "fed-gmail", full_name: "Federico Ulfo" }),
+      row({ id: "solo", full_name: "Only Once" }),
+    ]
+    mockIdentityRows = [{ user_id: "fed-live" }]
+
+    const result = await fetchCommunityMembers(VIEWER)
+
+    expect(result.map((m) => m.id)).toEqual(["fed-live", "solo"])
+  })
+})
+
+/* -------------------------------------------------------------------- dedupe */
+
+describe("dedupeCommunityMembers", () => {
+  const twins = [
+    member({ id: "a-1", fullName: "Anissa Felix" }),
+    member({ id: "a-2", fullName: "Anissa Felix" }),
+  ]
+
+  it("keeps every row when nobody is reachable — two strangers can share a name", () => {
+    expect(dedupeCommunityMembers(twins, new Set())).toEqual(twins)
+    expect(dedupeCommunityMembers(twins, new Set(["someone-else"]))).toEqual(twins)
+  })
+
+  it("keeps all reachable rows in a group, dropping only the unreachable ones", () => {
+    const rows = [
+      member({ id: "j-1", fullName: "Jo Chen" }),
+      member({ id: "j-2", fullName: "Jo Chen" }),
+      member({ id: "j-3", fullName: "Jo Chen" }),
+    ]
+
+    const result = dedupeCommunityMembers(rows, new Set(["j-1", "j-3"]))
+
+    expect(result.map((m) => m.id)).toEqual(["j-1", "j-3"])
+  })
+
+  it("normalizes names before grouping", () => {
+    const rows = [
+      member({ id: "n-1", fullName: "  Nora Vale " }),
+      member({ id: "n-2", fullName: "nora vale" }),
+    ]
+
+    expect(dedupeCommunityMembers(rows, new Set(["n-2"])).map((m) => m.id)).toEqual(["n-2"])
+  })
+
+  it("never touches unique names, reachable or not", () => {
+    const rows = [
+      member({ id: "u-1", fullName: "Unique One" }),
+      member({ id: "u-2", fullName: "Unique Two" }),
+    ]
+
+    expect(dedupeCommunityMembers(rows, new Set(["u-1"]))).toEqual(rows)
   })
 })
 

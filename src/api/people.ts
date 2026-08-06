@@ -63,6 +63,63 @@ function toMember(row: Row): CommunityMember | null {
 }
 
 /**
+ * The set of user ids with a registered chat key in `chat_identities` — the
+ * people a DM can actually reach. Anyone else resolves to the legacy derived
+ * key, which the relay happily accepts wraps for even though no device holds
+ * it (verified live), so a DM to them is a black hole, not an error.
+ *
+ * Best-effort: an unreachable directory returns an empty set, which turns the
+ * dedupe below off rather than hiding anyone.
+ */
+export async function fetchReachableUserIds(): Promise<Set<string>> {
+  try {
+    const { data, error } = await supabase.from("chat_identities").select("user_id")
+    if (error) return new Set()
+    const ids = new Set<string>()
+    for (const raw of (data ?? []) as { user_id: string | null }[]) {
+      if (raw.user_id) ids.add(raw.user_id)
+    }
+    return ids
+  } catch {
+    return new Set()
+  }
+}
+
+/**
+ * Collapse duplicate directory entries for the same person.
+ *
+ * Production `users` has several rows per human — old sign-ups, Telegram
+ * imports, a second email — all with the same name and no linking key. Every
+ * extra row is a live footgun: tapping it starts a DM to a derived key nobody
+ * holds. There is nothing to join the rows on, so the rule is deliberately
+ * narrow: within a group of identical (normalized) names, if at least one row
+ * has a registered chat identity, drop the rows that don't — they are
+ * near-certain black holes standing next to an address that works. Groups
+ * with no reachable row are left alone, because two strangers can legitimately
+ * share a name and neither row is better than the other.
+ */
+export function dedupeCommunityMembers(
+  members: CommunityMember[],
+  reachableIds: Set<string>,
+): CommunityMember[] {
+  if (!reachableIds.size) return members
+
+  const reachableNames = new Set<string>()
+  const nameCounts = new Map<string, number>()
+  for (const m of members) {
+    const key = m.fullName.trim().toLowerCase()
+    nameCounts.set(key, (nameCounts.get(key) ?? 0) + 1)
+    if (reachableIds.has(m.id)) reachableNames.add(key)
+  }
+
+  return members.filter((m) => {
+    const key = m.fullName.trim().toLowerCase()
+    if ((nameCounts.get(key) ?? 0) < 2) return true
+    return reachableIds.has(m.id) || !reachableNames.has(key)
+  })
+}
+
+/**
  * Everyone but the signed-in viewer, members first, then alphabetical.
  *
  * The `full_name IS NULL` filter happens in Postgres; a name that is present
@@ -71,14 +128,17 @@ function toMember(row: Row): CommunityMember | null {
  * rare enough that doing it client-side costs nothing.
  */
 export async function fetchCommunityMembers(viewerId: string): Promise<CommunityMember[]> {
-  const { data, error } = await supabase
-    .from(TABLE)
-    .select(COLUMNS)
-    .neq("id", viewerId)
-    .not("full_name", "is", null)
-    .order("is_member", { ascending: false })
-    .order("full_name", { ascending: true })
-    .limit(MAX_ROWS)
+  const [{ data, error }, reachable] = await Promise.all([
+    supabase
+      .from(TABLE)
+      .select(COLUMNS)
+      .neq("id", viewerId)
+      .not("full_name", "is", null)
+      .order("is_member", { ascending: false })
+      .order("full_name", { ascending: true })
+      .limit(MAX_ROWS),
+    fetchReachableUserIds(),
+  ])
 
   if (error) throw new Error(error.message)
 
@@ -87,7 +147,7 @@ export async function fetchCommunityMembers(viewerId: string): Promise<Community
     const member = toMember(raw)
     if (member) rows.push(member)
   }
-  return rows
+  return dedupeCommunityMembers(rows, reachable)
 }
 
 export function useCommunityMembers() {

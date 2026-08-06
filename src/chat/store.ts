@@ -229,7 +229,17 @@ export async function loadThreads(userId: string): Promise<ChatChannel[]> {
 export function rememberThread(userId: string, channel: ChatChannel) {
   if (channel.kind !== "dm") return
   const existing = threads.find((t) => t.id === channel.id)
-  if (existing && existing.name === channel.name && existing.avatarUrl === channel.avatarUrl) return
+  // `address` is part of the comparison on purpose: when a peer reinstalls,
+  // their pubkey changes, and a thread frozen at the old address would keep
+  // the whole conversation pointed at a key nobody holds anymore.
+  if (
+    existing &&
+    existing.name === channel.name &&
+    existing.avatarUrl === channel.avatarUrl &&
+    existing.address === channel.address
+  ) {
+    return
+  }
 
   threads = [channel, ...threads.filter((t) => t.id !== channel.id)]
   threadsUserId = userId
