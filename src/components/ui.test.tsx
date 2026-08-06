@@ -3,8 +3,8 @@ import * as Haptics from "expo-haptics"
 import React from "react"
 import { StyleSheet } from "react-native"
 
-import { darkPalette, lightPalette, ThemeProvider } from "@/theme"
-import { Button, Field, SegmentedControl } from "./ui"
+import { darkPalette, layout, lightPalette, ThemeProvider } from "@/theme"
+import { Button, Field, SegmentedControl, segmentScrollTarget } from "./ui"
 
 // See the note in touchable.test.tsx: the real motion gate resolves on a
 // microtask and would land a state update after the test body finishes.
@@ -73,6 +73,64 @@ describe("SegmentedControl", () => {
     expect(Haptics.selectionAsync).not.toHaveBeenCalled()
     // Still reported: the screen decides whether re-selecting means anything.
     expect(onChange).toHaveBeenCalledWith("all")
+  })
+
+  /**
+   * Regression: selecting a chip must not change its width, or every sibling
+   * shifts. Selection is colour-only — the box (padding, border width) and the
+   * label's font metrics have to be identical in both states.
+   */
+  it("gives selected and idle chips the same box and font metrics", () => {
+    render(<SegmentedControl options={OPTIONS} value="news" onChange={jest.fn()} />)
+
+    const box = (name: string) => {
+      const { paddingHorizontal, paddingVertical, borderWidth } = flatten(
+        screen.getByRole("tab", { name }).props.style,
+      )
+      return { paddingHorizontal, paddingVertical, borderWidth }
+    }
+    const font = (label: string) => {
+      const { fontSize, fontWeight, letterSpacing } = flatten(
+        screen.getByText(label).props.style,
+      )
+      return { fontSize, fontWeight, letterSpacing }
+    }
+
+    expect(box("News")).toEqual(box("All"))
+    expect(font("News")).toEqual(font("All"))
+  })
+})
+
+/**
+ * The other half of the no-layout-shift guarantee: the row only auto-scrolls
+ * when the selected chip is actually clipped by an edge. Unconditional
+ * scrolling here was the bug — every tap snapped the row to a new offset.
+ */
+describe("segmentScrollTarget", () => {
+  const VIEWPORT = 400
+
+  it("leaves the row alone when the chip is already fully visible", () => {
+    expect(segmentScrollTarget({ x: 100, width: 80, height: 32 }, 0, VIEWPORT)).toBeNull()
+    // Exactly on the margin still counts as visible.
+    expect(
+      segmentScrollTarget({ x: layout.gutter, width: VIEWPORT - layout.gutter * 2, height: 32 }, 0, VIEWPORT),
+    ).toBeNull()
+  })
+
+  it("scrolls the minimum distance to rescue a chip clipped on the right", () => {
+    expect(segmentScrollTarget({ x: 360, width: 80, height: 32 }, 0, VIEWPORT)).toBe(
+      360 + 80 + layout.gutter - VIEWPORT,
+    )
+  })
+
+  it("scrolls the minimum distance to rescue a chip clipped on the left", () => {
+    expect(segmentScrollTarget({ x: 100, width: 80, height: 32 }, 200, VIEWPORT)).toBe(
+      100 - layout.gutter,
+    )
+  })
+
+  it("clamps to the row start rather than overscrolling past it", () => {
+    expect(segmentScrollTarget({ x: 10, width: 60, height: 32 }, 200, VIEWPORT)).toBe(0)
   })
 })
 
