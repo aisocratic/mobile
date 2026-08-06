@@ -4,6 +4,8 @@ import React, { useMemo } from "react"
 import { ScrollView, StyleSheet, Text, View } from "react-native"
 
 
+import { InlineVideo } from "@/components/inline-video"
+import { isVideoUrl } from "@/lib/media"
 import { layout, space, usePalette } from "@/theme"
 
 /**
@@ -11,8 +13,9 @@ import { layout, space, usePalette } from "@/theme"
  *
  * Content in `blog_posts.content` / `updates.content` is authored markdown with
  * occasional inline HTML. We deliberately render a readable subset — headings,
- * paragraphs, lists, quotes, code, images, rules and inline emphasis/links —
- * rather than pulling in a full markdown+HTML stack for a reading view.
+ * paragraphs, lists, quotes, code, images, videos, rules and inline
+ * emphasis/links — rather than pulling in a full markdown+HTML stack for a
+ * reading view.
  */
 
 type Align = "left" | "center" | "right" | null
@@ -25,6 +28,7 @@ type Block =
   | { kind: "quote"; text: string }
   | { kind: "code"; text: string }
   | { kind: "image"; uri: string; alt: string }
+  | { kind: "video"; uri: string }
   | { kind: "rule" }
   | { kind: "table"; align: Align[]; header: string[]; rows: string[][] }
 
@@ -100,7 +104,18 @@ function tableAt(lines: string[], i: number): { block: Block; next: number } | n
 
 function parse(markdown: string): Block[] {
   const blocks: Block[] = []
-  const lines = stripHtml(markdown.replace(/\r\n/g, "\n")).split("\n")
+
+  // A `<video src>` (with or without a nested `<source>`) would be erased by
+  // stripHtml below — lift the src out first so it survives as a bare URL line
+  // and becomes a video block.
+  const withVideoSrcs = markdown
+    .replace(/\r\n/g, "\n")
+    .replace(/<video\b[^>]*>[\s\S]*?<\/video>|<video\b[^>]*\/?>/gi, (tag) => {
+      const src = tag.match(/src\s*=\s*["']([^"']+)["']/i)
+      return src ? `\n\n${src[1]}\n\n` : "\n"
+    })
+
+  const lines = stripHtml(withVideoSrcs).split("\n")
 
   let i = 0
   while (i < lines.length) {
@@ -127,9 +142,24 @@ function parse(markdown: string): Block[] {
       continue
     }
 
+    // Authors embed clips with image syntax — `![demo](clip.mp4)` — because
+    // markdown has no video syntax of its own. Route those to the player.
     const image = line.match(/^\s*!\[([^\]]*)\]\(([^)\s]+)/)
     if (image) {
-      blocks.push({ kind: "image", alt: image[1], uri: image[2] })
+      blocks.push(
+        isVideoUrl(image[2])
+          ? { kind: "video", uri: image[2] }
+          : { kind: "image", alt: image[1], uri: image[2] },
+      )
+      i++
+      continue
+    }
+
+    // A video URL standing alone on a line plays inline rather than printing
+    // as text nobody can watch.
+    const bare = line.trim()
+    if (/^https?:\/\/\S+$/.test(bare) && isVideoUrl(bare)) {
+      blocks.push({ kind: "video", uri: bare })
       i++
       continue
     }
@@ -451,6 +481,8 @@ export function Markdown({ content }: { content: string | null | undefined }) {
             )
           case "table":
             return <TableBlock key={idx} block={b} />
+          case "video":
+            return <InlineVideo key={idx} uri={b.uri} />
           case "rule":
             return (
               <View

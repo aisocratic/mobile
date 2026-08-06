@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query"
 
+import { isVideoUrl } from "@/lib/media"
 import { SITE_URL, supabase } from "@/lib/supabase"
 import type { BlogPostRow } from "@/types"
 
@@ -77,9 +78,13 @@ export function useBlogPost(slug: string | undefined) {
 
 /* --------------------------------------------------------------- helpers */
 
-/** Several rows store "" rather than NULL for missing image derivatives. */
-function firstUrl(...candidates: (string | null | undefined)[]): string | null {
-  const found = candidates.find((c) => c && c.trim())
+/**
+ * Several rows store "" rather than NULL for missing image derivatives, and a
+ * cover column can also hold a video — skip both so `expo-image` only ever
+ * receives a real still.
+ */
+function firstImage(...candidates: (string | null | undefined)[]): string | null {
+  const found = candidates.find((c) => c && c.trim() && !isVideoUrl(c))
   return found?.trim() ?? null
 }
 
@@ -87,9 +92,19 @@ export function coverUri(
   post: Pick<BlogListItem, "cover_image" | "cover_image_medium" | "cover_image_thumb">,
   size: "thumb" | "medium" | "full" = "medium",
 ): string | null {
-  if (size === "thumb") return firstUrl(post.cover_image_thumb, post.cover_image_medium, post.cover_image)
-  if (size === "full") return firstUrl(post.cover_image, post.cover_image_medium)
-  return firstUrl(post.cover_image_medium, post.cover_image)
+  if (size === "thumb") return firstImage(post.cover_image_thumb, post.cover_image_medium, post.cover_image)
+  if (size === "full") return firstImage(post.cover_image, post.cover_image_medium)
+  return firstImage(post.cover_image_medium, post.cover_image)
+}
+
+/** The post's cover when it is a clip rather than a still, else null. */
+export function coverVideo(
+  post: Pick<BlogListItem, "cover_image" | "cover_image_medium" | "cover_image_thumb">,
+): string | null {
+  const found = [post.cover_image, post.cover_image_medium, post.cover_image_thumb].find((c) =>
+    isVideoUrl(c),
+  )
+  return found?.trim() ?? null
 }
 
 export function authorLine(authors: string[] | null, max = 2): string | null {

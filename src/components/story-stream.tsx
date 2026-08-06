@@ -10,6 +10,7 @@ import { authorLine, readingTime } from "@/api/blog"
 import { ALL, useFeed, type FeedItem, type FeedSource } from "@/api/feed"
 import { CommunityCta } from "@/components/community-cta"
 import { FadeIn } from "@/components/fade-in"
+import { InlineVideo } from "@/components/inline-video"
 import { Touchable } from "@/components/touchable"
 import {
   Avatar,
@@ -142,7 +143,17 @@ const Hero = React.memo(function Hero({
         }}
       >
         <View style={{ width: "100%", aspectRatio: 16 / 9, backgroundColor: p.input }}>
-          {item.cover ? (
+          {item.video ? (
+            // Non-interactive: the card owns the tap. The clip autoplays muted
+            // when motion is allowed and stays a poster under Reduce Motion;
+            // the detail screen has the tappable player.
+            <InlineVideo
+              uri={item.video}
+              poster={item.cover}
+              interactive={false}
+              style={{ width: "100%", height: "100%", borderRadius: 0 }}
+            />
+          ) : item.cover ? (
             <Image
               source={{ uri: item.cover }}
               style={{ width: "100%", height: "100%" }}
@@ -279,6 +290,27 @@ const Row = React.memo(function Row({
             />
           </View>
         )}
+
+        {/* A story whose cover is a clip says so before it's opened. */}
+        {item.video ? (
+          <View
+            pointerEvents="none"
+            style={[StyleSheet.absoluteFill, { alignItems: "center", justifyContent: "center" }]}
+          >
+            <View
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: layout.radiusPill,
+                backgroundColor: "rgba(0,0,0,0.45)",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Ionicons name="play" size={13} color="#FFFFFF" style={{ marginLeft: space.hair }} />
+            </View>
+          </View>
+        ) : null}
       </View>
 
       <View style={{ flex: 1, gap: space.xs + 1 }}>

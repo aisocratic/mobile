@@ -1,11 +1,12 @@
 import { useCallback, useMemo, useRef } from "react"
 
-import { categoriesOf, coverUri, useBlogPosts, type BlogListItem } from "@/api/blog"
+import { categoriesOf, coverUri, coverVideo, useBlogPosts, type BlogListItem } from "@/api/blog"
 import {
   isLinkOnly,
   newsCategory,
   newsImage,
   newsSnippet,
+  newsVideo,
   useNewsCategories,
   useNewsFeed,
   type NewsItem,
@@ -37,6 +38,8 @@ export type FeedItem = {
   snippet: string
   thumb: string | null
   cover: string | null
+  /** Set when the story's cover media is a clip rather than a still. */
+  video: string | null
   publishedAt: string | null
   authors: string[] | null
   readingMinutes: number | null
@@ -60,6 +63,7 @@ function fromNews(item: NewsItem): FeedItem {
     snippet: newsSnippet(item, SNIPPET),
     thumb: newsImage(item, "small"),
     cover: newsImage(item, "large"),
+    video: newsVideo(item),
     publishedAt: item.published_at,
     authors: item.authors,
     readingMinutes: item.reading_time_minutes,
@@ -81,6 +85,7 @@ function fromBlog(post: BlogListItem): FeedItem {
     snippet: excerpt(post.summary || post.teaser, SNIPPET),
     thumb: coverUri(post, "thumb"),
     cover: coverUri(post, "medium"),
+    video: coverVideo(post),
     publishedAt: post.published_at,
     authors: post.authors,
     readingMinutes: post.reading_time_minutes,
