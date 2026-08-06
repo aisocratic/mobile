@@ -16,6 +16,7 @@ import {
 
 import { FadeIn } from "@/components/fade-in"
 import { fire, Touchable } from "@/components/touchable"
+import { useMayAnimate } from "@/lib/reduce-motion"
 import { layout, motion, space, usePalette, type as typeScale } from "@/theme"
 
 /* ------------------------------------------------------------------ text */
@@ -286,10 +287,37 @@ export function Chip({ label, tone }: { label: string; tone?: "accent" | "muted"
 type Measured = { x: number; width: number; height: number }
 
 /**
+ * Where the filter row must scroll so the selected chip is fully visible, or
+ * `null` when it already is — in which case the row must not move at all.
+ *
+ * Exported for tests: this is the decision that used to cause the bug where
+ * tapping any chip snapped the whole row to put that chip at the left edge,
+ * a layout jump on every selection. Scrolling is now the exception (chip
+ * clipped by an edge) and travels the minimum distance, with a gutter of
+ * breathing room so a rescued chip doesn't sit flush against the edge.
+ */
+export function segmentScrollTarget(
+  chip: Measured,
+  scrollX: number,
+  viewportWidth: number,
+): number | null {
+  const left = chip.x - layout.gutter
+  const right = chip.x + chip.width + layout.gutter
+  if (left < scrollX) return Math.max(0, left)
+  if (right > scrollX + viewportWidth) return right - viewportWidth
+  return null
+}
+
+/**
  * A horizontal filter bar. The selection changes instantly — this control used
  * to slide a pill between options, and on a row you retap several times in a
  * row the travel read as lag, not polish. Frames are still measured, but only
  * to keep the selected chip scrolled into view on rows wider than the screen.
+ *
+ * Selection restyles a chip with colour only (background, border, text) — the
+ * padding, border width and font metrics are identical in both states, so a
+ * chip never changes width when it becomes selected and its siblings never
+ * shift.
  */
 export function SegmentedControl<T extends string>({
   options,
@@ -301,7 +329,13 @@ export function SegmentedControl<T extends string>({
   onChange: (v: T) => void
 }) {
   const p = usePalette()
+  const mayAnimate = useMayAnimate()
   const scroller = useRef<ScrollView>(null)
+  // Refs, not state: the current offset and viewport width only matter at the
+  // moment a selection lands, and tracking them as state would re-render the
+  // whole row on every scroll frame.
+  const scrollX = useRef(0)
+  const viewportWidth = useRef(0)
   const [frames, setFrames] = useState<Record<string, Measured>>({})
 
   const onLayoutOption = useCallback((key: string, frame: Measured) => {
@@ -316,19 +350,26 @@ export function SegmentedControl<T extends string>({
 
   // Keep the selection reachable: on Feed the topic list is far wider than the
   // screen, and selecting the last chip used to leave it half off the edge.
+  // But only when the chip is actually clipped — an unconditional scroll here
+  // shifted the row on every tap, a layout jump for chips in plain view.
   useEffect(() => {
-    if (!target) return
-    scroller.current?.scrollTo({
-      x: Math.max(0, target.x - layout.gutter * 2),
-      animated: false,
-    })
-  }, [target])
+    if (!target || !viewportWidth.current) return
+    const x = segmentScrollTarget(target, scrollX.current, viewportWidth.current)
+    if (x !== null) scroller.current?.scrollTo({ x, animated: mayAnimate })
+  }, [target, mayAnimate])
 
   return (
     <ScrollView
       ref={scroller}
       horizontal
       showsHorizontalScrollIndicator={false}
+      onLayout={(e) => {
+        viewportWidth.current = e.nativeEvent.layout.width
+      }}
+      onScroll={(e) => {
+        scrollX.current = e.nativeEvent.contentOffset.x
+      }}
+      scrollEventThrottle={16}
       contentContainerStyle={{ gap: space.sm, paddingHorizontal: layout.gutter }}
     >
       {options.map((o) => {
