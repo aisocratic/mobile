@@ -1,6 +1,7 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { excerpt } from "@/lib/format"
+import { isVideoUrl } from "@/lib/media"
 import { SITE_URL, supabase } from "@/lib/supabase"
 import type { NewsRow } from "@/types"
 
@@ -85,11 +86,27 @@ function absolute(url: string | null): string | null {
   return `${SITE_URL}${url.startsWith("/") ? "" : "/"}${url}`
 }
 
+/**
+ * First candidate that is a usable *image*. Some rows carry a video in a cover
+ * column, and handing an .mp4 to `expo-image` renders a blank box — skip those
+ * and keep falling through to a real still.
+ */
+function firstImage(...candidates: (string | null)[]): string | null {
+  return candidates.find((c) => !!c && !isVideoUrl(c)) ?? null
+}
+
 /** Resized variants exist for 378 of 490 rows, so always fall through. */
 export function newsImage(item: NewsItem, size: "small" | "large" = "large"): string | null {
   return size === "small"
-    ? absolute(item.cover_image_thumb ?? item.cover_image_medium ?? item.cover_image)
-    : absolute(item.cover_image ?? item.cover_image_medium ?? item.cover_image_thumb)
+    ? absolute(firstImage(item.cover_image_thumb, item.cover_image_medium, item.cover_image))
+    : absolute(firstImage(item.cover_image, item.cover_image_medium, item.cover_image_thumb))
+}
+
+/** The story's cover when it is a clip rather than a still, else null. */
+export function newsVideo(item: NewsItem): string | null {
+  return absolute(
+    [item.cover_image, item.cover_image_medium, item.cover_image_thumb].find(isVideoUrl) ?? null,
+  )
 }
 
 /**

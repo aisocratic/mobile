@@ -31,6 +31,71 @@ jest.mock("@expo/vector-icons", () => {
   }
 })
 
+// expo-video's player is a native object jest can't construct. The stand-in is
+// a small stateful fake: components can set flags and call play/pause on it,
+// and every player ever created is recorded on `__videoPlayers` so tests can
+// assert what playback was actually asked for. Recreating the player when
+// `source` changes (and re-running `setup`) mirrors the real hook.
+jest.mock("expo-video", () => {
+  const React = require("react")
+  const { View } = require("react-native")
+
+  type MockPlayer = {
+    source: unknown
+    loop: boolean
+    muted: boolean
+    playing: boolean
+    audioMixingMode: string
+    play: jest.Mock
+    pause: jest.Mock
+    replace: jest.Mock
+    addListener: jest.Mock
+  }
+
+  const players: MockPlayer[] = []
+
+  const makePlayer = (source: unknown): MockPlayer => {
+    const player = {
+      source,
+      loop: false,
+      muted: false,
+      playing: false,
+      audioMixingMode: "auto",
+    } as MockPlayer
+    player.play = jest.fn(() => {
+      player.playing = true
+    })
+    player.pause = jest.fn(() => {
+      player.playing = false
+    })
+    player.replace = jest.fn()
+    player.addListener = jest.fn(() => ({ remove: jest.fn() }))
+    players.push(player)
+    return player
+  }
+
+  return {
+    VideoView: ({
+      player,
+      nativeControls,
+      contentFit,
+      fullscreenOptions,
+      allowsPictureInPicture,
+      ...rest
+    }: Record<string, unknown>) => React.createElement(View, rest),
+    useVideoPlayer: (source: unknown, setup?: (p: MockPlayer) => void) => {
+      const ref = React.useRef(null) as { current: { source: unknown; player: MockPlayer } | null }
+      if (!ref.current || ref.current.source !== source) {
+        const player = makePlayer(source)
+        ref.current = { source, player }
+        setup?.(player)
+      }
+      return ref.current.player
+    },
+    __videoPlayers: players,
+  }
+})
+
 // Metro injects these at build time; jest doesn't.
 process.env.EXPO_PUBLIC_API_URL ||= "https://api.example.test"
 process.env.EXPO_PUBLIC_API_KEY ||= "test-anon-key"

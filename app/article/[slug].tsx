@@ -8,6 +8,7 @@ import { Platform, ScrollView, Share, StyleSheet, View } from "react-native"
 import {
   authorLine,
   coverUri,
+  coverVideo,
   readableContent,
   readingTime,
   reactionsOf,
@@ -15,6 +16,7 @@ import {
   webUrl,
   type Reaction,
 } from "@/api/blog"
+import { InlineVideo } from "@/components/inline-video"
 import { Markdown } from "@/components/markdown"
 import {
   Avatar,
@@ -133,6 +135,7 @@ export default function ArticleScreen() {
 
   const url = webUrl(post)
   const cover = coverUri(post, "full")
+  const clip = coverVideo(post)
   const body = readableContent(post.content)
   const by = authorLine(post.authors, 3)
   const minutes = readingTime(post.reading_time_minutes)
@@ -152,7 +155,10 @@ export default function ArticleScreen() {
   return (
     <Screen>
       <ScrollView contentContainerStyle={{ paddingBottom: 56 }} showsVerticalScrollIndicator={false}>
-        {cover ? (
+        {clip ? (
+          // The article cover runs full-bleed, so the player drops its radius.
+          <InlineVideo uri={clip} poster={cover} label={post.title} style={{ borderRadius: 0 }} />
+        ) : cover ? (
           <Image
             source={{ uri: cover }}
             style={{ width: "100%", aspectRatio: 16 / 9, backgroundColor: p.input }}

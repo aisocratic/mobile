@@ -4,7 +4,8 @@ import * as WebBrowser from "expo-web-browser"
 import React, { useCallback } from "react"
 import { ScrollView, Share, StyleSheet, View } from "react-native"
 
-import { newsImage, newsShareUrl, useNewsItem, type NewsItem } from "@/api/news"
+import { newsImage, newsShareUrl, newsVideo, useNewsItem, type NewsItem } from "@/api/news"
+import { InlineVideo } from "@/components/inline-video"
 import { Markdown } from "@/components/markdown"
 import { Button, Chip, ErrorState, IconButton, Loading, Muted, Screen, Txt } from "@/components/ui"
 import { formatDay } from "@/lib/format"
@@ -41,6 +42,7 @@ export default function NewsDetailScreen() {
   const { data, isPending, isError, error, refetch } = useNewsItem(id)
 
   const cover = data ? newsImage(data, "large") : null
+  const video = data ? newsVideo(data) : null
   const authors = data?.authors?.join(", ") ?? null
   const readingTime = data?.reading_time_minutes
   const meta = [
@@ -67,7 +69,18 @@ export default function NewsDetailScreen() {
           contentContainerStyle={{ padding: layout.gutter, paddingBottom: space.xxxl + space.sm, gap: space.lg }}
           showsVerticalScrollIndicator={false}
         >
-          {cover ? (
+          {video ? (
+            <InlineVideo
+              uri={video}
+              poster={cover}
+              label={data.title}
+              style={{
+                borderRadius: layout.radius,
+                borderWidth: StyleSheet.hairlineWidth,
+                borderColor: p.border,
+              }}
+            />
+          ) : cover ? (
             <Image
               source={{ uri: cover }}
               style={{

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react-native"
+import { act, render, screen } from "@testing-library/react-native"
 import React from "react"
 
 import { Markdown } from "./markdown"
@@ -39,5 +39,47 @@ describe("Markdown", () => {
     render(<Markdown content={"# The Open-Weight AI War"} />)
 
     expect(screen.getByText("The Open-Weight AI War")).toBeOnTheScreen()
+  })
+
+  /**
+   * Markdown has no video syntax, so clips arrive three ways: image syntax
+   * pointing at a video file, a bare URL on its own line, or an inline HTML
+   * `<video>` tag. All three must reach the player, and plain images must not.
+   */
+  it("routes image syntax with a video URL to the video player", async () => {
+    render(<Markdown content={"![demo](https://cdn.example.com/demo.mp4)"} />)
+    await act(async () => {})
+
+    expect(screen.getByTestId("inline-video")).toBeOnTheScreen()
+  })
+
+  it("plays a bare video URL standing alone on a line", async () => {
+    const url = "https://cdn.example.com/launch.mp4"
+    render(<Markdown content={`Watch the launch:\n\n${url}\n\nMore below.`} />)
+    await act(async () => {})
+
+    expect(screen.getByTestId("inline-video")).toBeOnTheScreen()
+    // The URL plays; it must not also print as a paragraph of text.
+    expect(screen.queryByText(url)).toBeNull()
+  })
+
+  it("lifts the src out of an inline <video> tag before HTML is stripped", async () => {
+    render(
+      <Markdown
+        content={'Before.\n<video controls src="https://cdn.example.com/clip.mp4"></video>\nAfter.'}
+      />,
+    )
+    await act(async () => {})
+
+    expect(screen.getByTestId("inline-video")).toBeOnTheScreen()
+    expect(screen.getByText("Before.")).toBeOnTheScreen()
+    expect(screen.getByText("After.")).toBeOnTheScreen()
+  })
+
+  it("leaves ordinary images as images", async () => {
+    render(<Markdown content={"![photo](https://cdn.example.com/cover.jpg)"} />)
+    await act(async () => {})
+
+    expect(screen.queryByTestId("inline-video")).toBeNull()
   })
 })
