@@ -66,11 +66,20 @@ export type ChatMessage = {
   failed?: boolean
 }
 
-/** NIP-01 kind-0 metadata, the closest thing Nostr has to a profile. */
+/**
+ * A pubkey's human identity, from whichever source knew it.
+ *
+ * `directory` means the community directory (`chat_identities` joined to
+ * `public.users`) — real names entered at signup, authoritative. `relay` means
+ * NIP-01 kind-0 metadata — self-published, best-effort, and absent for anyone
+ * who has never announced. When both exist the directory wins; see
+ * `mergeProfiles` in ./profiles.
+ */
 export type ChatProfile = {
   pubkey: string
   name: string | null
   avatarUrl: string | null
+  source?: "directory" | "relay"
 }
 
 export type ChatIdentity = {

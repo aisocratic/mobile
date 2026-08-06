@@ -6,6 +6,7 @@
  * change to this file and nothing else.
  */
 
+import { useQuery } from "@tanstack/react-query"
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 
 import { useAuth } from "@/store/auth"
@@ -14,6 +15,13 @@ import { BUZZ_RELAY_URL, getNostrAdapter, PUBLIC_RELAY_URL, RELAY_URL } from "./
 import { INVITE_LIMITS, policyDocumentUrls } from "./buzz"
 import { clearDirectoryCache } from "./directory"
 import { takePendingInvite } from "./pending-invite"
+import {
+  clearProfileCache,
+  displayChannel,
+  fallbackDisplayName,
+  fetchProfilesForPubkeys,
+  profileDisplayName,
+} from "./profiles"
 import { shortNpub } from "./protocol"
 import {
   clearStore,
@@ -48,8 +56,10 @@ import type {
 
 export {
   BUZZ_RELAY_URL,
+  fallbackDisplayName,
   INVITE_LIMITS,
   policyDocumentUrls,
+  profileDisplayName,
   PUBLIC_RELAY_URL,
   RELAY_URL,
   shortNpub,
@@ -90,6 +100,11 @@ export function useChatAdapter(): ChatAdapter | null {
       // The directory maps member uuids to pubkeys and is readable only by the
       // signed-in account, so it is per-session state like everything else here.
       clearDirectoryCache()
+      // Same for the reverse map (pubkey -> person) behind name resolution,
+      // and the once-per-session kind-0 request log: the store the answers
+      // lived in was just cleared, so the questions must be askable again.
+      clearProfileCache()
+      requestedProfiles.clear()
     }
     previousUser.current = userId
   }, [userId])
@@ -208,24 +223,52 @@ function useMessageFeed(
 }
 
 /**
- * Resolve kind-0 metadata for message authors so the UI shows names, not hex.
- * Each pubkey is requested at most once per session.
+ * Resolve pubkeys into people, so the UI shows names, never hex.
+ *
+ * Two sources feed the store, and precedence between them lives in
+ * `mergeProfiles` (see ./profiles):
+ *
+ *   1. the community directory — `chat_identities` joined to `public.users`,
+ *      fetched in one batch and cached by react-query (plus a per-session
+ *      cache inside ./profiles, so a growing author set only ever queries the
+ *      keys it hasn't seen);
+ *   2. kind-0 relay metadata, as a live subscription, for keys the directory
+ *      doesn't know — guests on derived keys, members of other communities.
+ *
+ * Components then read the merged result with `useProfile`, and fall back to
+ * a short npub via `profileDisplayName` when neither source answered.
  */
 const requestedProfiles = new Set<string>()
 
-function useAuthorProfiles(pubkeys: string[]) {
+function useProfileResolution(pubkeys: string[]) {
   const adapter = useChatAdapter()
-  const signature = pubkeys.join(",")
+  // Order-insensitive: the same authors discovered in a different order must
+  // not look like a new query.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const signature = useMemo(() => [...new Set(pubkeys)].sort().join(","), [pubkeys.join(",")])
+
+  const { data: directoryProfiles } = useQuery({
+    queryKey: ["chat-profiles", signature],
+    queryFn: () => fetchProfilesForPubkeys(signature.split(",")),
+    enabled: !!adapter && signature.length > 0,
+    staleTime: 5 * 60_000,
+  })
 
   useEffect(() => {
-    if (!adapter) return
-    const wanted = pubkeys.filter((pk) => !requestedProfiles.has(pk))
+    if (directoryProfiles?.length) ingestProfiles(directoryProfiles)
+  }, [directoryProfiles])
+
+  // Kind-0 is requested for every key (not just directory misses): it is the
+  // only source of avatars for members whose users row has none, and each key
+  // is asked about at most once per session.
+  useEffect(() => {
+    if (!adapter || !signature) return
+    const wanted = signature.split(",").filter((pk) => !requestedProfiles.has(pk))
     if (!wanted.length) return
     for (const pk of wanted) requestedProfiles.add(pk)
 
     const subscription = adapter.subscribeProfiles(wanted, ingestProfiles)
     return () => subscription.close()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [adapter, signature])
 }
 
@@ -300,12 +343,22 @@ export function useChannels(): {
 
   const { ready, error } = useMessageFeed(channels, 8)
 
+  // Resolve every DM counterparty in one batch, so rows show the person's
+  // current name rather than whatever was persisted when the thread opened.
+  const dmPeers = useMemo(
+    () => channels.filter((c) => c.kind === "dm").map((c) => c.address),
+    [channels],
+  )
+  useProfileResolution(dmPeers)
+
   const summaries = useMemo(
     () =>
       channels.map((channel) => {
         const lastMessage = getLastMessage(channel.id)
         return {
-          channel,
+          // Presentation-ready: DM titles and avatars come from the resolved
+          // profile, falling back to the stored name, never to a raw key.
+          channel: displayChannel(channel, getProfile(channel.address)),
           lastMessage,
           unread:
             !!lastMessage && !lastMessage.mine && lastMessage.createdAt > getLastReadAt(channel.id),
@@ -610,8 +663,20 @@ export function useChannel(routeId: string | undefined): {
     }
   }, [adapter, routeId, user?.id, nonce])
 
+  // The header must show a person, not a hash: resolve the DM counterparty and
+  // overlay whatever the directory or the relay knows onto the channel.
+  const peerKeys = useMemo(() => (channel?.kind === "dm" ? [channel.address] : []), [channel])
+  useProfileResolution(peerKeys)
+
+  const version = useStoreVersion()
+  const resolved = useMemo(
+    () => (channel ? displayChannel(channel, getProfile(channel.address)) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [channel, version],
+  )
+
   const reload = useCallback(() => setNonce((n) => n + 1), [])
-  return { channel, loading, error, reload }
+  return { channel: resolved, loading, error, reload }
 }
 
 /* ------------------------------------------------------------ messages */
@@ -644,7 +709,7 @@ export function useMessages(channel: ChatChannel | null): {
     for (const m of messages) if (!m.mine) seen.add(m.authorId)
     return [...seen]
   }, [messages])
-  useAuthorProfiles(authors)
+  useProfileResolution(authors)
 
   // Opening a channel clears its unread badge.
   useEffect(() => {
