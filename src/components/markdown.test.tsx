@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react-native"
 import React from "react"
+import { ScrollView } from "react-native"
 
 import { Markdown } from "./markdown"
 
@@ -39,5 +40,67 @@ describe("Markdown", () => {
     render(<Markdown content={"# The Open-Weight AI War"} />)
 
     expect(screen.getByText("The Open-Weight AI War")).toBeOnTheScreen()
+  })
+
+  describe("tables", () => {
+    it("renders a pipe table as cells inside a horizontal ScrollView", () => {
+      render(
+        <Markdown
+          content={"| Model | Score |\n|---|---|\n| Claude | 92 |\n| GPT | 88 |"}
+        />,
+      )
+
+      expect(screen.getByText("Model")).toBeOnTheScreen()
+      expect(screen.getByText("Score")).toBeOnTheScreen()
+      expect(screen.getByText("Claude")).toBeOnTheScreen()
+      expect(screen.getByText("88")).toBeOnTheScreen()
+      // No raw pipe syntax leaks through.
+      expect(screen.queryByText(/\|/)).toBeNull()
+      // Wide tables scroll sideways instead of crushing the layout.
+      const scroll = screen.UNSAFE_getByType(ScrollView)
+      expect(scroll.props.horizontal).toBe(true)
+    })
+
+    it("respects column alignment from the separator row", () => {
+      render(
+        <Markdown content={"| Left | Middle | Right |\n|:---|:---:|---:|\n| a | b | c |"} />,
+      )
+
+      expect(screen.getByText("a")).toHaveStyle({ textAlign: "left" })
+      expect(screen.getByText("b")).toHaveStyle({ textAlign: "center" })
+      expect(screen.getByText("c")).toHaveStyle({ textAlign: "right" })
+    })
+
+    it("renders inline markdown inside cells", () => {
+      render(
+        <Markdown
+          content={"| Name | Notes |\n|---|---|\n| **bold** | [site](https://example.com) and `code` |"}
+        />,
+      )
+
+      expect(screen.getByText("bold")).toHaveStyle({ fontWeight: "700" })
+      expect(screen.getByText("site")).toHaveStyle({ textDecorationLine: "underline" })
+      expect(screen.getByText("code")).toBeOnTheScreen()
+    })
+
+    it("pads short body rows to the header width", () => {
+      render(<Markdown content={"| A | B |\n|---|---|\n| only |"} />)
+
+      expect(screen.getByText("only")).toBeOnTheScreen()
+      expect(screen.queryByText(/\|/)).toBeNull()
+    })
+
+    it("falls back to text when there is no separator row", () => {
+      render(<Markdown content={"| A | B |\n| 1 | 2 |"} />)
+
+      expect(screen.getByText("| A | B |\n| 1 | 2 |")).toBeOnTheScreen()
+    })
+
+    it("falls back to text when the separator width does not match the header", () => {
+      render(<Markdown content={"| A | B | C |\n|---|---|\n| 1 | 2 | 3 |"} />)
+
+      expect(screen.getByText(/\| A \| B \| C \|/)).toBeOnTheScreen()
+      expect(screen.queryByText("A")).toBeNull()
+    })
   })
 })
