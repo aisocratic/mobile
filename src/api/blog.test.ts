@@ -2,9 +2,9 @@ import { coverUri, coverVideo } from "./blog"
 
 // These tests exercise the pure cover helpers; no query ever runs. The mock
 // exists so importing blog.ts doesn't construct a real Supabase client.
-jest.mock("@/lib/supabase", () => ({
+jest.mock("@/lib/api", () => ({
   SITE_URL: "https://aisocratic.org",
-  supabase: { from: jest.fn() },
+  api: { from: jest.fn() },
 }))
 
 type Covers = {

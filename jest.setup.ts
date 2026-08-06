@@ -1,5 +1,5 @@
 // expo-secure-store has no JS implementation under jest; the session storage
-// adapter in src/lib/supabase.ts only needs it to exist.
+// adapter in src/lib/session-storage.ts only needs it to exist.
 jest.mock("expo-secure-store", () => ({
   getItemAsync: jest.fn(async () => null),
   setItemAsync: jest.fn(async () => undefined),
@@ -8,7 +8,7 @@ jest.mock("expo-secure-store", () => ({
 
 // Same story for AsyncStorage: importing it outside a native runtime throws
 // ("NativeModule: AsyncStorage is null"), which takes down any suite that
-// transitively reaches src/lib/supabase.ts. The package ships its own
+// transitively reaches src/lib/session-storage.ts. The package ships its own
 // in-memory jest mock for exactly this.
 jest.mock("@react-native-async-storage/async-storage", () =>
   require("@react-native-async-storage/async-storage/jest/async-storage-mock"),

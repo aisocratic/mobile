@@ -2,7 +2,7 @@ import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-quer
 
 import { excerpt } from "@/lib/format"
 import { isVideoUrl } from "@/lib/media"
-import { SITE_URL, supabase } from "@/lib/supabase"
+import { SITE_URL, api } from "@/lib/api"
 import type { NewsRow } from "@/types"
 
 /**
@@ -143,7 +143,7 @@ export type NewsPage = {
 }
 
 export async function fetchNewsPage(offset: number, category: string | null): Promise<NewsPage> {
-  let query = supabase
+  let query = api
     .from("updates")
     .select(COLUMNS)
     .match(PUBLIC_FILTERS)
@@ -166,7 +166,7 @@ export async function fetchNewsPage(offset: number, category: string | null): Pr
  * the filter row doesn't reshuffle as the reader scrolls.
  */
 export async function fetchNewsCategories(): Promise<string[]> {
-  const { data, error } = await supabase.from("updates").select("categories").match(PUBLIC_FILTERS)
+  const { data, error } = await api.from("updates").select("categories").match(PUBLIC_FILTERS)
   if (error) throw new Error(error.message)
 
   // Tags are hand-entered, so "Research" and "research" both appear; keep the
@@ -192,7 +192,7 @@ const MIN_CATEGORY_ROWS = 5
 const MAX_CATEGORIES = 12
 
 export async function fetchNewsItem(id: string): Promise<NewsItem> {
-  const { data, error } = await supabase
+  const { data, error } = await api
     .from("updates")
     .select(COLUMNS)
     .eq("id", id)

@@ -29,7 +29,7 @@
 
 import AsyncStorage from "@react-native-async-storage/async-storage"
 
-import { supabase } from "@/lib/supabase"
+import { api } from "@/lib/api"
 
 import { loadOrCreateAccount, type ChatAccount } from "./account"
 import {
@@ -412,7 +412,7 @@ class NostrChatAdapter implements ChatAdapter {
   async autoJoin(ageConfirmed: boolean): Promise<ChatJoinResult> {
     if (!this.canAutoJoin) throw new BuzzApiError("auto_join_unavailable", 501)
 
-    const { data } = await supabase.auth.getSession()
+    const { data } = await api.auth.getSession()
     const accessToken = data.session?.access_token
     if (!accessToken) throw new BuzzApiError("invalid_session", 401)
 
@@ -605,7 +605,7 @@ class NostrChatAdapter implements ChatAdapter {
     // Otherwise it's a person: the Connections feature routes here with an
     // `event_users.id`. Prefer their claimed account id, since that is the id
     // their chat account is registered under.
-    const { data, error } = await supabase
+    const { data, error } = await api
       .from("event_users")
       .select("id,name,email,avatar_url,company,title,user_id")
       .eq("id", routeId)
@@ -634,7 +634,7 @@ class NostrChatAdapter implements ChatAdapter {
       }
     }
 
-    const { data: userRow } = await supabase
+    const { data: userRow } = await api
       .from("users")
       .select("id,full_name,email,avatar_url,job_title,organization")
       .eq("id", routeId)

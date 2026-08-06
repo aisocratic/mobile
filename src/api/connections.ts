@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query"
 
-import { supabase } from "@/lib/supabase"
+import { api } from "@/lib/api"
 import { useAuth } from "@/store/auth"
 import type { Connection, ConnectionRole, MemberRow, SharedEvent } from "@/types"
 
@@ -384,7 +384,7 @@ async function fetchEventUsersBy(
   const rows: EventUserRow[] = []
 
   for (const group of chunk(values)) {
-    const { data, error } = await supabase
+    const { data, error } = await api
       .from("event_users")
       .select(EVENT_USER_COLUMNS)
       .in(column, group)
@@ -406,7 +406,7 @@ async function fetchAttendanceBy(
   for (const group of chunk(values)) {
     for (let page = 0; page < MAX_PAGES; page++) {
       const from = page * PAGE_SIZE
-      const { data, error } = await supabase
+      const { data, error } = await api
         .from("event_attendance")
         .select(ATTENDANCE_COLUMNS)
         .in(column, group)
@@ -423,7 +423,7 @@ async function fetchAttendanceBy(
 }
 
 async function fetchEventIndex(): Promise<Map<string, EventInfo>> {
-  const { data, error } = await supabase
+  const { data, error } = await api
     .from("events")
     .select(EVENT_COLUMNS)
     .order("start_at", { ascending: false })
@@ -451,7 +451,7 @@ async function fetchEnrichment(rows: EventUserRow[]): Promise<Enrichment> {
 
   try {
     for (const group of chunk(memberIds)) {
-      const { data } = await supabase.from("members").select(MEMBER_COLUMNS).in("id", group)
+      const { data } = await api.from("members").select(MEMBER_COLUMNS).in("id", group)
       for (const raw of (data ?? []) as Raw[]) {
         const member = toMember(raw)
         if (member.id) byMemberId.set(member.id, member)
@@ -463,7 +463,7 @@ async function fetchEnrichment(rows: EventUserRow[]): Promise<Enrichment> {
 
   try {
     for (const group of chunk(userIds)) {
-      const { data } = await supabase.from("users").select(USER_COLUMNS).in("id", group)
+      const { data } = await api.from("users").select(USER_COLUMNS).in("id", group)
       for (const raw of (data ?? []) as Raw[]) {
         const user = toUserLite(raw)
         if (user.id) byUserId.set(user.id, user)
@@ -733,7 +733,7 @@ export async function fetchConnections(viewer: Viewer): Promise<ConnectionsResul
  * an address can never break a PostgREST `or=(…)` filter.
  */
 async function fetchEventUsersByEmail(email: string): Promise<EventUserRow[]> {
-  const { data, error } = await supabase
+  const { data, error } = await api
     .from("event_users")
     .select(EVENT_USER_COLUMNS)
     .ilike("email", email.trim())
@@ -742,7 +742,7 @@ async function fetchEventUsersByEmail(email: string): Promise<EventUserRow[]> {
 }
 
 export async function fetchMemberProfile(id: string): Promise<MemberProfile | null> {
-  const { data, error } = await supabase
+  const { data, error } = await api
     .from("event_users")
     .select(EVENT_USER_COLUMNS)
     .eq("id", id)

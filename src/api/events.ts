@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 
-import { SITE_URL, supabase } from "@/lib/supabase"
+import { SITE_URL, api } from "@/lib/api"
 import type { EventHost, EventRow } from "@/types"
 
 /**
@@ -147,7 +147,7 @@ export function eventLink(event: EventRow): string | null {
 export async function fetchEvents(filter: EventFilter): Promise<EventRow[]> {
   const now = new Date().toISOString()
 
-  const base = supabase.from("events").select(LIST_COLUMNS)
+  const base = api.from("events").select(LIST_COLUMNS)
   const upcoming = filter === "upcoming"
 
   const { data, error } = await (upcoming ? base.gte("start_at", now) : base.lt("start_at", now))
@@ -159,7 +159,7 @@ export async function fetchEvents(filter: EventFilter): Promise<EventRow[]> {
 }
 
 export async function fetchEvent(id: string): Promise<EventRow> {
-  const { data, error } = await supabase
+  const { data, error } = await api
     .from("events")
     .select(DETAIL_COLUMNS)
     .eq("id", id)

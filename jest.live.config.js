@@ -19,7 +19,7 @@ module.exports = {
   // relay backfills.
   testTimeout: 180_000,
   maxWorkers: 1,
-  // The app keeps live sockets and supabase auto-refresh timers; the test
+  // The app keeps live sockets and auth auto-refresh timers; the test
   // tears its own state down but must not hang the runner on a stray handle.
   forceExit: true,
 }

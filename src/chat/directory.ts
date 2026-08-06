@@ -23,7 +23,7 @@
  * this is not a column on `public.users`.
  */
 
-import { supabase } from "@/lib/supabase"
+import { api } from "@/lib/api"
 
 import { pubkeyForPerson } from "./account"
 
@@ -86,7 +86,7 @@ function toRecord(row: Row): ChatIdentityRecord {
 
 /** This user's registered identity, or null if they have never registered one. */
 export async function fetchOwnIdentity(userId: string): Promise<ChatIdentityRecord | null> {
-  const { data, error } = await supabase
+  const { data, error } = await api
     .from(TABLE)
     .select("user_id,nostr_pubkey,relay_url,community_id,role,joined_at")
     .eq("user_id", userId)
@@ -140,7 +140,7 @@ export async function registerChatIdentity(input: {
     patch.joined_at = null
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await api
     .from(TABLE)
     .upsert(patch, { onConflict: "user_id" })
     .select("user_id,nostr_pubkey,relay_url,community_id,role,joined_at")
@@ -188,7 +188,7 @@ export async function lookupPubkeys(userIds: string[]): Promise<Map<string, stri
   }
 
   if (unknown.length) {
-    const { data, error } = await supabase
+    const { data, error } = await api
       .from(TABLE)
       .select("user_id,nostr_pubkey")
       .in("user_id", unknown)

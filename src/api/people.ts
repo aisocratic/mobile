@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query"
 
-import { supabase } from "@/lib/supabase"
+import { api } from "@/lib/api"
 import { useAuth } from "@/store/auth"
 
 /**
@@ -73,7 +73,7 @@ function toMember(row: Row): CommunityMember | null {
  */
 export async function fetchReachableUserIds(): Promise<Set<string>> {
   try {
-    const { data, error } = await supabase.from("chat_identities").select("user_id")
+    const { data, error } = await api.from("chat_identities").select("user_id")
     if (error) return new Set()
     const ids = new Set<string>()
     for (const raw of (data ?? []) as { user_id: string | null }[]) {
@@ -96,7 +96,7 @@ export async function fetchReachableUserIds(): Promise<Set<string>> {
 export async function fetchExistingUserIds(ids: string[]): Promise<Set<string> | null> {
   if (!ids.length) return new Set()
   try {
-    const { data, error } = await supabase.from("users").select("id").in("id", ids)
+    const { data, error } = await api.from("users").select("id").in("id", ids)
     if (error) return null
     const found = new Set<string>()
     for (const raw of (data ?? []) as { id: string | null }[]) {
@@ -152,7 +152,7 @@ export function dedupeCommunityMembers(
  */
 export async function fetchCommunityMembers(viewerId: string): Promise<CommunityMember[]> {
   const [{ data, error }, reachable] = await Promise.all([
-    supabase
+    api
       .from(TABLE)
       .select(COLUMNS)
       .neq("id", viewerId)

@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router"
-import type { User } from "@supabase/supabase-js"
+import type { User } from "@/lib/api"
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native"
 

@@ -3,7 +3,7 @@ import React, { useEffect, useRef, useState } from "react"
 import { View } from "react-native"
 
 import { Button, Loading, Screen, Txt } from "@/components/ui"
-import { supabase } from "@/lib/supabase"
+import { api } from "@/lib/api"
 import { layout, usePalette } from "@/theme"
 
 /**
@@ -47,10 +47,10 @@ export default function AuthCallback() {
 
       try {
         if (params.code) {
-          const { error: err } = await supabase.auth.exchangeCodeForSession(params.code)
+          const { error: err } = await api.auth.exchangeCodeForSession(params.code)
           if (err) throw err
         } else if (params.access_token && params.refresh_token) {
-          const { error: err } = await supabase.auth.setSession({
+          const { error: err } = await api.auth.setSession({
             access_token: params.access_token,
             refresh_token: params.refresh_token,
           })

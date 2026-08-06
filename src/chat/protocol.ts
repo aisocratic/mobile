@@ -3,8 +3,9 @@
  * @noble/@scure primitives.
  *
  * Why not `nostr-tools`? It is an ESM-only package whose subpaths are reachable
- * only through its `exports` map, and this repo has to keep Metro's
- * `unstable_enablePackageExports` off for @supabase/supabase-js. Rather than
+ * only through its `exports` map, and this repo keeps Metro's
+ * `unstable_enablePackageExports` off (originally forced by the since-removed
+ * @supabase/supabase-js; see metro.config.js). Rather than
  * flip a global resolver flag and risk a bundle that won't load, we implement
  * NIP-01/04/19/28 here — it is about 150 lines and has no resolution surprises.
  * @noble/curves and @noble/hashes ship flat files at their package root, so they

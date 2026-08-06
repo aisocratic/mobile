@@ -2,7 +2,7 @@
 
 A native iOS and Android client for [aisocratic.org](https://aisocratic.org): events, news, the blog, community chat, and the people you've met at AI Socratic events.
 
-Built with **Expo (React Native) + expo-router**, talking directly to the community's self-hosted Supabase stack at `api.aisocratic.org`.
+Built with **Expo (React Native) + expo-router**, talking directly to the community's self-hosted backend — Postgres + PostgREST + GoTrue — at `api.aisocratic.org`, through thin in-repo protocol clients.
 
 ---
 
@@ -38,7 +38,7 @@ Other scripts:
 | Variable | Purpose |
 | --- | --- |
 | `EXPO_PUBLIC_API_URL` | Kong gateway in front of GoTrue + PostgREST — `https://api.aisocratic.org` |
-| `EXPO_PUBLIC_API_KEY` | Supabase **anon** key. A public, RLS-scoped JWT; safe to ship in a client bundle |
+| `EXPO_PUBLIC_API_KEY` | The backend's **anon** key. A public, RLS-scoped JWT; safe to ship in a client bundle |
 | `EXPO_PUBLIC_SITE_URL` | `https://aisocratic.org`, used for share links and "open on the web" |
 | `EXPO_PUBLIC_NOSTR_RELAY` | Relay powering chat (see [Chat](#chat)) |
 
@@ -60,9 +60,9 @@ The brief said "choose the best native solution." The options and the reasoning:
 Two further points settled it:
 
 1. The website repo already contains a fixtures-only Expo prototype at `apps/ios` (Expo SDK 54, expo-router 6, RN 0.81). This project reuses that exact, proven version matrix and its brand theme — so the choice is consistent with where the team was already heading.
-2. The backend is Supabase. `@supabase/supabase-js` runs natively in React Native, which means auth and data need no bespoke mobile API layer.
+2. The backend is self-hosted Postgres fronted by PostgREST (data) and GoTrue (auth) — open HTTP protocols a native client can speak directly, which means auth and data need no bespoke mobile API layer. The app talks to them through two thin in-repo clients over `fetch` (`src/lib/postgrest.ts`, `src/lib/gotrue.ts`) rather than a vendor SDK.
 
-**Stack:** Expo SDK 54 · React Native 0.81.5 · React 19.1 · expo-router 6 (typed routes, file-based) · TanStack Query 5 · `@supabase/supabase-js` 2 · TypeScript strict.
+**Stack:** Expo SDK 54 · React Native 0.81.5 · React 19.1 · expo-router 6 (typed routes, file-based) · TanStack Query 5 · in-repo PostgREST/GoTrue clients · TypeScript strict.
 
 ---
 
@@ -93,7 +93,10 @@ src/
     auth-form.tsx             # shared two-step passwordless form
     error-boundary.tsx        # shared crash screen, mounted per route group
   lib/
-    supabase.ts               # client + SecureStore-backed session storage
+    api.ts                    # the app's client: api.from (PostgREST) + api.auth (GoTrue)
+    postgrest.ts              # minimal PostgREST query builder over fetch
+    gotrue.ts                 # minimal GoTrue auth client (OTP, PKCE OAuth, refresh)
+    session-storage.ts        # chunked SecureStore-backed session storage
     query.ts                  # QueryClient
     format.ts                 # date/text helpers
     reduce-motion.ts          # one shared Reduce Motion subscription for the app
@@ -102,7 +105,7 @@ src/
   types.ts                    # row types transcribed from the live schema
 ```
 
-**Data flow.** Screens call hooks from `src/api/*`, which wrap TanStack Query around `supabase.from(...)` calls straight to PostgREST. There is no bespoke backend-for-frontend: the app is a first-class API client of the same database the website uses. Row Level Security is what separates public content from private.
+**Data flow.** Screens call hooks from `src/api/*`, which wrap TanStack Query around `api.from(...)` calls straight to PostgREST. There is no bespoke backend-for-frontend: the app is a first-class API client of the same database the website uses. Row Level Security is what separates public content from private.
 
 **Theming.** Every surface derives colour from `usePalette()`, which follows the OS light/dark setting. The palette is lifted from the website's design tokens — near-black `#0A0A0A` backgrounds with the amber accent (`#D97706` light / `#FBBF24` dark).
 
@@ -158,7 +161,7 @@ One deliberate constraint: `process.env.EXPO_PUBLIC_*` is *inlined by Metro at b
 `aisocratic.org` has **no passwords**. GoTrue is configured for passwordless 6-digit email OTP plus Google OAuth, and this app uses exactly the same two flows as the website's `/login`:
 
 - **Email code** — `signInWithOtp({ shouldCreateUser: true })` → `verifyOtp()`. Sign-up and sign-in are the same call; the screens differ only in that sign-up also collects a name (stored as `full_name` in user metadata). Resends are throttled client-side to match GoTrue's 60-second limit.
-- **Google** — `signInWithOAuth({ skipBrowserRedirect: true })` opened in `expo-web-browser`, returning to the `aisocratic://` deep link. The client is configured `flowType: "pkce"`, so the code verifier never leaves the device; `detectSessionInUrl` is off on native, so the callback is parsed by hand (PKCE `?code=` first, implicit fragment as a fallback).
+- **Google** — `signInWithOAuth()` builds the GoTrue authorize URL, which is opened in `expo-web-browser` and returns to the `aisocratic://` deep link. The flow is PKCE S256, so the code verifier never leaves the device; there is no browser URL to inspect on native, so the callback is parsed by hand (PKCE `?code=` first, implicit fragment as a fallback).
 
 > ### ⚠️ Google sign-in needs a server-side allowlist entry
 >
@@ -210,7 +213,7 @@ One deliberate constraint: `process.env.EXPO_PUBLIC_*` is *inlined by Metro at b
 
 `app/auth/callback.tsx` is a safety net, not the happy path. `WebBrowser.openAuthSessionAsync` intercepts the redirect inside the auth sheet and hands the URL straight back to `signInWithGoogle`, so no navigation normally occurs. But the OS can deliver `aisocratic://auth/callback` out of band — sheet dismissed early, a magic link opened from a mail client, a cold start — and without that route those landed on expo-router's "Unmatched Route" screen. Verified with `xcrun simctl openurl booted "aisocratic://auth/callback?probe=1"` against the dev build: it now redeems any credentials in the link and redirects into the app.
 
-**PKCE needs a WebCrypto shim on Hermes.** `@supabase/auth-js` feature-detects `crypto.subtle` when building the code challenge; Hermes has no WebCrypto, so it logs *"WebCrypto API is not supported. Code challenge method will default to use plain instead of sha256"* and falls back to `plain` — which sends the verifier itself as the challenge and discards most of PKCE's value. `src/lib/webcrypto.ts` supplies the one primitive it needs (SHA-256 `digest`, on `@noble/hashes`, already a dependency) and is imported before the client is constructed. The warning is gone and the challenge is S256. It's unit-tested against known vectors, including that it hashes only a view's slice rather than its whole backing buffer.
+**PKCE needs a WebCrypto shim on Hermes.** Building the S256 code challenge takes `crypto.subtle.digest`, and Hermes has no WebCrypto. The alternative would be the `plain` challenge method — which sends the verifier itself as the challenge and discards most of PKCE's value (this is exactly what `@supabase/auth-js` used to fall back to, silently, before it was replaced by `src/lib/gotrue.ts`; our client has no `plain` fallback at all). `src/lib/webcrypto.ts` supplies the one primitive the flow needs (SHA-256 `digest`, on `@noble/hashes`, already a dependency) and is imported before anything builds a challenge, so the challenge is always S256. It's unit-tested against known vectors, including that it hashes only a view's slice rather than its whole backing buffer.
 
 Sessions persist in the iOS Keychain / Android Keystore via `expo-secure-store`, chunked to stay under SecureStore's 2 KB per-item limit.
 
@@ -319,7 +322,7 @@ Steps 1–3 need an invite code, and a code can only be minted by a key holding 
 So the key lives on the server instead, and the app asks it for a code:
 
 ```
-app  ──Authorization: Bearer <supabase JWT>──▶  POST /api/buzz/join   (website repo)
+app  ──Authorization: Bearer <GoTrue JWT>──▶  POST /api/buzz/join   (website repo)
                                                      │ holds BUZZ_OWNER_KEY
                                                      ├─▶ POST /api/invites   NIP-98, owner key
                                                      │      { ttl_secs: 300, max_uses: 1 }
@@ -352,7 +355,7 @@ Sharing goes through the native share sheet (`Share` from react-native — no ne
 
 Three findings from building it:
 
-- **`nostr-tools` was installed, evaluated, and removed.** It's ESM-only with subpaths reachable only through its `exports` map, and this project must keep Metro's `unstable_enablePackageExports` **off** for `@supabase/supabase-js` to resolve. Rather than flip a global resolver flag, the ~150 lines of protocol are implemented directly on `@noble/curves`, `@noble/hashes`, `@noble/ciphers` and `@scure/base` — nostr-tools' own dependencies, which ship flat files and resolve identically either way.
+- **`nostr-tools` was installed, evaluated, and removed.** It's ESM-only with subpaths reachable only through its `exports` map, and at the time this project had to keep Metro's `unstable_enablePackageExports` **off** for `@supabase/supabase-js` to resolve. Rather than flip a global resolver flag, the ~150 lines of protocol are implemented directly on `@noble/curves`, `@noble/hashes`, `@noble/ciphers` and `@scure/base` — nostr-tools' own dependencies, which ship flat files and resolve identically either way. (supabase-js has since been replaced by in-repo clients; the flag stays off because nothing needs it on and flipping it is bundle-wide risk for zero gain.)
 - **The public-relay default was chosen by testing writes, not by reputation.** Most large relays now refuse events from keys outside their web of trust — `nos.lol` returns "not acceptable at this point", `offchain.pub` and `nostr.bitcoiner.social` return "pubkey is not in our web of trust", `nostr.land` is paid. A fresh key would have produced an app that looks fine and silently drops every message. `relay.primal.net` accepts them; verified by publishing on one connection and reading the event back on a separate fresh one with the signature re-checked.
 - **NIP-28 rooms were not reused as a NIP-29 fallback**, though it was tempting. A NIP-28 room id is a 32-byte event hash and Buzz requires `h` to be a lowercase UUID v4, so those rooms would have rendered fine and had every message rejected on send. A Buzz community with no groups shows an honest empty state instead. The built-in rooms remain the full channel set on the public-relay path.
 
@@ -415,7 +418,7 @@ Pointing at a different Buzz community is one line and no code change — `EXPO_
 
 **Unexercised pending real credentials:** a successful mint (still needs an owner/admin key in `BUZZ_OWNER_KEY` — everything up to the role check is proven), NIP-29 group discovery, and kind-9 send/receive over the wire.
 
-**Proven live end to end (2026-08-06, `scripts/dm-live-test.mjs`):** the whole DM pipeline against the deployed relay with two fresh keypairs — `POST /api/buzz/join` mints, accept-policy receipts, NIP-98 claims answer `{"status":"joined","role":"member"}`, NIP-42 AUTH succeeds as a member (`OK … true`), a NIP-17 gift wrap published with the app's exact semantics is accepted, delivered live through the app's exact filter (`kinds:[1059], "#p":[me]`), and served again to a cold reconnect. The probes that shaped the fixes: the relay **accepts wraps addressed to non-member keys** with `OK … true` (a DM to a dead key looks delivered and vanishes silently), `kinds:[1059]` without `#p` is refused (`restricted: p-gated events require #p matching your pubkey`), pre-AUTH publishes and REQs get `auth-required` and the relay does **not** replay a refused REQ after AUTH (the client must re-issue it — `RelayClient` does). Re-run with two Supabase access tokens: `JWT_A=… JWT_B=… node scripts/dm-live-test.mjs`.
+**Proven live end to end (2026-08-06, `scripts/dm-live-test.mjs`):** the whole DM pipeline against the deployed relay with two fresh keypairs — `POST /api/buzz/join` mints, accept-policy receipts, NIP-98 claims answer `{"status":"joined","role":"member"}`, NIP-42 AUTH succeeds as a member (`OK … true`), a NIP-17 gift wrap published with the app's exact semantics is accepted, delivered live through the app's exact filter (`kinds:[1059], "#p":[me]`), and served again to a cold reconnect. The probes that shaped the fixes: the relay **accepts wraps addressed to non-member keys** with `OK … true` (a DM to a dead key looks delivered and vanishes silently), `kinds:[1059]` without `#p` is refused (`restricted: p-gated events require #p matching your pubkey`), pre-AUTH publishes and REQs get `auth-required` and the relay does **not** replay a refused REQ after AUTH (the client must re-issue it — `RelayClient` does). Re-run with two GoTrue access tokens: `JWT_A=… JWT_B=… node scripts/dm-live-test.mjs`.
 
 ---
 

@@ -29,8 +29,8 @@ let mockRows: Row[] = []
 let mockError: { message: string } | null = null
 let mockIdentityRows: { user_id: string | null }[] = []
 
-jest.mock("@/lib/supabase", () => ({
-  supabase: {
+jest.mock("@/lib/api", () => ({
+  api: {
     from(table: string) {
       // `chat_identities` is a flat read — resolve it directly so the
       // reachability lookup in fetchReachableUserIds sees realistic rows.

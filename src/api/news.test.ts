@@ -2,9 +2,9 @@ import { newsImage, newsVideo, type NewsItem } from "./news"
 
 // These tests exercise the pure media helpers; no query ever runs. The mock
 // exists so importing news.ts doesn't construct a real Supabase client.
-jest.mock("@/lib/supabase", () => ({
+jest.mock("@/lib/api", () => ({
   SITE_URL: "https://aisocratic.org",
-  supabase: { from: jest.fn() },
+  api: { from: jest.fn() },
 }))
 
 function item(overrides: Partial<NewsItem> = {}): NewsItem {

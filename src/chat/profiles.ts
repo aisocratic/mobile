@@ -24,7 +24,7 @@
  * caller can trust that a non-null name is printable.
  */
 
-import { supabase } from "@/lib/supabase"
+import { api } from "@/lib/api"
 
 import { npubEncode, shortNpub } from "./protocol"
 import type { ChatChannel, ChatProfile } from "./types"
@@ -162,7 +162,7 @@ export async function fetchProfilesForPubkeys(pubkeys: string[]): Promise<ChatPr
 
   if (!unknown.length) return hits
 
-  const { data, error } = await supabase
+  const { data, error } = await api
     .from("chat_identities")
     .select("user_id,nostr_pubkey")
     .in("nostr_pubkey", unknown)
@@ -177,7 +177,7 @@ export async function fetchProfilesForPubkeys(pubkeys: string[]): Promise<ChatPr
   const people = new Map<string, { name: string | null; avatarUrl: string | null }>()
   const userIds = [...new Set(userByPubkey.values())]
   if (userIds.length) {
-    const { data: userRows, error: usersError } = await supabase
+    const { data: userRows, error: usersError } = await api
       .from("users")
       .select("id,full_name,avatar_url")
       .in("id", userIds)

@@ -1,11 +1,38 @@
-import type { Session, User } from "@supabase/supabase-js"
+
 import * as Linking from "expo-linking"
 import * as WebBrowser from "expo-web-browser"
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react"
 
-import { supabase } from "@/lib/supabase"
+import { api, type Session, type User } from "@/lib/api"
 
 WebBrowser.maybeCompleteAuthSession()
+
+/**
+ * Query + fragment parameters of a callback URL, query first. Done by hand
+ * because Hermes' built-in URL/URLSearchParams are partial (the full ones
+ * used to arrive via react-native-url-polyfill, which left with supabase-js),
+ * and a deep-link URL is simple enough to split directly.
+ */
+function callbackParam(url: string, key: string): string | null {
+  const hashAt = url.indexOf("#")
+  const beforeHash = hashAt < 0 ? url : url.slice(0, hashAt)
+  const queryAt = beforeHash.indexOf("?")
+
+  const chunks = [
+    queryAt < 0 ? "" : beforeHash.slice(queryAt + 1),
+    hashAt < 0 ? "" : url.slice(hashAt + 1),
+  ]
+
+  for (const chunk of chunks) {
+    for (const pair of chunk.split("&")) {
+      const eq = pair.indexOf("=")
+      if (eq < 0) continue
+      if (decodeURIComponent(pair.slice(0, eq)) !== key) continue
+      return decodeURIComponent(pair.slice(eq + 1).replace(/\+/g, " "))
+    }
+  }
+  return null
+}
 
 /**
  * aisocratic.org has no passwords. GoTrue is configured for passwordless
@@ -61,7 +88,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   const loadProfile = useCallback(async (userId: string) => {
-    const { data, error } = await supabase
+    const { data, error } = await api
       .from("users")
       .select(PROFILE_COLUMNS)
       .eq("id", userId)
@@ -77,14 +104,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let active = true
 
-    supabase.auth.getSession().then(({ data }) => {
+    api.auth.getSession().then(({ data }) => {
       if (!active) return
       setSession(data.session)
       setLoading(false)
       if (data.session?.user) void loadProfile(data.session.user.id)
     })
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
+    const { data: sub } = api.auth.onAuthStateChange((_event, next) => {
       setSession(next)
       if (next?.user) void loadProfile(next.user.id)
       else setProfile(null)
@@ -97,7 +124,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [loadProfile])
 
   const sendCode = useCallback(async (email: string, fullName?: string) => {
-    const { error } = await supabase.auth.signInWithOtp({
+    const { error } = await api.auth.signInWithOtp({
       email: email.trim().toLowerCase(),
       options: {
         shouldCreateUser: true,
@@ -115,7 +142,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const verifyCode = useCallback(async (email: string, code: string) => {
-    const { error } = await supabase.auth.verifyOtp({
+    const { error } = await api.auth.verifyOtp({
       email: email.trim().toLowerCase(),
       token: code.trim(),
       type: "email",
@@ -132,9 +159,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // while the app waits forever. See the auth notes in README.md.
     const redirectTo = Linking.createURL("auth/callback")
 
-    const { data, error } = await supabase.auth.signInWithOAuth({
+    const { data, error } = await api.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo, skipBrowserRedirect: true },
+      options: { redirectTo },
     })
     if (error) throw error
     if (!data.url) throw new Error("Could not start Google sign-in.")
@@ -145,19 +172,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // out. Neither is an error worth showing.
     if (result.type !== "success") return
 
-    const url = new URL(result.url)
-    const query = new URLSearchParams(url.search.replace(/^\?/, ""))
-    const fragment = new URLSearchParams(url.hash.replace(/^#/, ""))
-    const param = (key: string) => query.get(key) ?? fragment.get(key)
+    const param = (key: string) => callbackParam(result.url, key)
 
     const errorDescription = param("error_description") ?? param("error")
-    if (errorDescription) throw new Error(errorDescription.replace(/\+/g, " "))
+    if (errorDescription) throw new Error(errorDescription)
 
     // PKCE (our configured flow) comes back as ?code=. Exchange it for a
     // session using the verifier we stored when the flow started.
     const code = param("code")
     if (code) {
-      const { error: exchangeErr } = await supabase.auth.exchangeCodeForSession(code)
+      const { error: exchangeErr } = await api.auth.exchangeCodeForSession(code)
       if (exchangeErr) throw exchangeErr
       return
     }
@@ -166,7 +190,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const access_token = param("access_token")
     const refresh_token = param("refresh_token")
     if (access_token && refresh_token) {
-      const { error: setErr } = await supabase.auth.setSession({ access_token, refresh_token })
+      const { error: setErr } = await api.auth.setSession({ access_token, refresh_token })
       if (setErr) throw setErr
       return
     }
@@ -177,7 +201,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const signOut = useCallback(async () => {
-    await supabase.auth.signOut()
+    await api.auth.signOut()
     setProfile(null)
   }, [])
 
@@ -194,13 +218,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // `public.users` row (see loadProfile), so the name still sticks even if
       // the row write below is refused. `updateUser` fires USER_UPDATED, which
       // the listener above turns into fresh session state.
-      const { error: metaError } = await supabase.auth.updateUser({
+      const { error: metaError } = await api.auth.updateUser({
         data: { full_name: patch.full_name ?? "" },
       })
 
       // upsert rather than update: signing up in the app leaves you with a
       // GoTrue user and no profile row until the website provisions one.
-      const { data, error } = await supabase
+      const { data, error } = await api
         .from("users")
         .upsert({ id: current.id, email: current.email ?? null, ...patch }, { onConflict: "id" })
         .select(PROFILE_COLUMNS)

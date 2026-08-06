@@ -21,7 +21,7 @@
  *
  * "Two app instances" is literal: each instance is created inside
  * `jest.isolateModulesAsync`, so it gets its own copies of every module-level
- * singleton (`RelayClient` socket, chat store, supabase client, directory
+ * singleton (`RelayClient` socket, chat store, api client, directory
  * cache) — the same isolation two phones have. Device storage (Keychain via
  * expo-secure-store, AsyncStorage) is mocked per *device* and survives the
  * cold restart, exactly like a real reinstall-free relaunch.
@@ -33,7 +33,7 @@
  *             protocol, dm-discovery.ts, store.ts (ingestMessages,
  *             putLocalMessage, loadThreads/rememberThread), buzz.ts join
  *             pipeline, directory.ts registerChatIdentity (with a real
- *             authenticated supabase session), the production relay and the
+ *             authenticated GoTrue session), the production relay and the
  *             production https://aisocratic.org/api/buzz/join endpoint.
  *   MOCKED    expo-secure-store and AsyncStorage (in-memory per-device maps —
  *             they are native modules), plus whatever jest.setup.ts mocks.
@@ -44,7 +44,7 @@
  *             hook layer itself (index.ts) is NOT exercised.
  *
  * Credentials (all resolvable automatically on the owner's machine):
- *   - Supabase URL + anon key: from this repo's .env (loaded by
+ *   - Backend URL + anon key: from this repo's .env (loaded by
  *     jest.live.setup.ts as EXPO_PUBLIC_API_URL / EXPO_PUBLIC_API_KEY).
  *   - Service-role key (to create/delete the two throwaway auth accounts):
  *     SUPABASE_SERVICE_ROLE_KEY env var, falling back to API_SERVICE_ROLE_KEY
@@ -244,8 +244,8 @@ type AppInstance = {
 
 /**
  * Boot one app instance: a fresh module registry (fresh RelayClient socket,
- * fresh store, fresh supabase client) bound to this user's device storage,
- * with the user's real Supabase session installed before the adapter is
+ * fresh store, fresh auth client) bound to this user's device storage,
+ * with the user's real GoTrue session installed before the adapter is
  * constructed — exactly the state a signed-in app process starts from.
  */
 async function startInstance(name: string, user: TestUser): Promise<AppInstance> {
@@ -257,8 +257,8 @@ async function startInstance(name: string, user: TestUser): Promise<AppInstance>
     mockActive.device = device
     wsOwner.current = name
 
-    const { supabase } = require("@/lib/supabase") as typeof import("@/lib/supabase")
-    const { error } = await supabase.auth.setSession({
+    const { api } = require("@/lib/api") as typeof import("@/lib/api")
+    const { error } = await api.auth.setSession({
       access_token: user.accessToken,
       refresh_token: user.refreshToken,
     })
@@ -276,7 +276,7 @@ async function startInstance(name: string, user: TestUser): Promise<AppInstance>
       store,
       destroy: () => {
         adapter.destroy()
-        supabase.auth.stopAutoRefresh()
+        api.auth.stopAutoRefresh()
       },
     }
   })
@@ -399,7 +399,7 @@ afterAll(async () => {
     }
   }
 
-  // ---- Supabase cleanup: chat_identities rows, then the auth users. ----
+  // ---- Backend cleanup: chat_identities rows, then the auth users. ----
   if (ctx.users.length) {
     const ids = ctx.users.map((u) => u.id)
     try {

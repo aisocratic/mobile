@@ -7,7 +7,7 @@ import { Alert, Linking, ScrollView, StyleSheet, View } from "react-native"
 import { FadeIn } from "@/components/fade-in"
 import { Touchable } from "@/components/touchable"
 import { Avatar, Button, Card, Divider, Muted, Screen, Txt } from "@/components/ui"
-import { SITE_URL } from "@/lib/supabase"
+import { SITE_URL } from "@/lib/api"
 import { useAuth } from "@/store/auth"
 import { layout, motion, space, usePalette } from "@/theme"
 

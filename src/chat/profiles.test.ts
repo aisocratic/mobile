@@ -31,8 +31,8 @@ let mockIdentities = new Map<string, { user_id: string | null; nostr_pubkey: str
 let mockUsers = new Map<string, { id: string; full_name: string | null; avatar_url: string | null }>()
 let mockFailNextSelect = false
 
-jest.mock("@/lib/supabase", () => ({
-  supabase: {
+jest.mock("@/lib/api", () => ({
+  api: {
     from(table: string) {
       return {
         select() {

@@ -5,17 +5,18 @@ import { sha256 } from "@noble/hashes/sha2.js"
 /**
  * Minimal `crypto.subtle.digest` for Hermes.
  *
- * Hermes ships no WebCrypto. `@supabase/auth-js` feature-detects
- * `crypto.subtle` when building the PKCE code challenge and, finding nothing,
- * logs "WebCrypto API is not supported. Code challenge method will default to
- * use plain instead of sha256" and falls back to the `plain` method — which
- * sends the verifier itself as the challenge. That throws away most of what
- * PKCE is for, and some authorization servers reject `plain` outright.
+ * Hermes ships no WebCrypto, and `src/lib/gotrue.ts` needs
+ * `crypto.subtle.digest("SHA-256", …)` to build the PKCE S256 code challenge.
+ * Without it the only alternative would be the `plain` challenge method —
+ * which sends the verifier itself as the challenge, throws away most of what
+ * PKCE is for, and is rejected by some authorization servers outright.
+ * (@supabase/auth-js, which this shim originally served, silently fell back
+ * to `plain`; our client has no such fallback — S256 or nothing.)
  *
- * SHA-256 is the only algorithm auth-js asks for, so that is all we implement:
- * a narrow shim is easier to reason about than a full WebCrypto polyfill.
- * `react-native-get-random-values` (imported above) supplies
- * `crypto.getRandomValues`, which is the other half auth-js needs.
+ * SHA-256 is the only algorithm the PKCE flow asks for, so that is all we
+ * implement: a narrow shim is easier to reason about than a full WebCrypto
+ * polyfill. `react-native-get-random-values` (imported above) supplies
+ * `crypto.getRandomValues`, the other half the flow needs.
  */
 
 type Digestible = ArrayBuffer | ArrayBufferView

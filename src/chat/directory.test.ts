@@ -24,8 +24,8 @@ const mockOps: Op[] = []
 let mockRows = new Map<string, { user_id: string; nostr_pubkey: string; relay_url: string }>()
 let mockFailNextSelect = false
 
-jest.mock("@/lib/supabase", () => ({
-  supabase: {
+jest.mock("@/lib/api", () => ({
+  api: {
     from(table: string) {
       const op: Op = { table, verb: "" }
 

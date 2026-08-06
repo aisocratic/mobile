@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 
 import { isVideoUrl } from "@/lib/media"
-import { SITE_URL, supabase } from "@/lib/supabase"
+import { SITE_URL, api } from "@/lib/api"
 import type { BlogPostRow } from "@/types"
 
 /**
@@ -32,7 +32,7 @@ const DETAIL_COLUMNS = `${LIST_COLUMNS},content`
  * `public` and 2 are `users` (members-only). Signed-in readers get all 31.
  */
 function publishedQuery(columns: string) {
-  return supabase
+  return api
     .from("blog_posts")
     .select(columns)
     .eq("is_published", true)
