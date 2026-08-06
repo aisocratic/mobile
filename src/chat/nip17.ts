@@ -18,8 +18,13 @@
  *                     is what the relay sees, so the relay learns only "someone
  *                     sent something to this pubkey".
  *
- * Timestamps on the seal and wrap are randomised up to two days into the past
- * so the relay cannot correlate a conversation by arrival time.
+ * Timestamps on the seal and wrap are randomised a few minutes into the past
+ * so the relay cannot correlate a conversation by arrival time. NIP-59
+ * suggests up to two days, but the Buzz relay enforces a tight created_at
+ * window against its own clock and rejects heavily backdated events with
+ * "invalid: event timestamp too far from server time" — and on a members-only
+ * relay, deliverability beats that last sliver of metadata privacy. The
+ * *rumor's* timestamp is never fuzzed: it is the time recipients display.
  *
  * A message is wrapped twice — once to the recipient, once to ourselves —
  * because the relay is the only storage and we could not otherwise read back
@@ -43,13 +48,31 @@ import {
   type UnsignedEvent,
 } from "./protocol"
 
-/** Two days, the window NIP-59 suggests for timestamp fuzzing. */
-const MAX_TIME_JITTER_SECONDS = 2 * 24 * 60 * 60
+/**
+ * How far into the past a seal/wrap timestamp may be fuzzed. Small enough that
+ * a strict relay's created_at window (Buzz rejects events "too far from server
+ * time") still accepts every value in the range.
+ */
+export const MAX_TIME_JITTER_SECONDS = 15 * 60
 
-function jitteredTimestamp(): number {
+/**
+ * Knobs for the outer (seal + wrap) timestamps only; the rumor is never
+ * touched. `skewSeconds` shifts "now" by an estimated device-clock error, and
+ * `jitterSeconds` bounds the backdating fuzz (0 disables it) — both exist so a
+ * timestamp-rejected send can be re-wrapped with corrected times and retried.
+ */
+export type WrapTimestampOptions = {
+  skewSeconds?: number
+  jitterSeconds?: number
+}
+
+function jitteredTimestamp(options: WrapTimestampOptions = {}): number {
+  const { skewSeconds = 0, jitterSeconds = MAX_TIME_JITTER_SECONDS } = options
+  const now = Math.floor(Date.now() / 1000) + skewSeconds
+  if (jitterSeconds <= 0) return now
   const offset = Crypto.getRandomBytes(4)
   const value = new DataView(offset.buffer, offset.byteOffset, 4).getUint32(0, false)
-  return Math.floor(Date.now() / 1000) - (value % MAX_TIME_JITTER_SECONDS)
+  return now - (value % jitterSeconds)
 }
 
 function randomNonce(): Uint8Array {
@@ -79,11 +102,16 @@ export function buildRumor(
  * Wrap a rumor for one recipient. Call once per recipient — including yourself,
  * or you lose your own sent messages.
  */
-export function giftWrap(rumor: Rumor, senderSk: Uint8Array, recipientPubkey: string): NostrEvent {
+export function giftWrap(
+  rumor: Rumor,
+  senderSk: Uint8Array,
+  recipientPubkey: string,
+  timestamps: WrapTimestampOptions = {},
+): NostrEvent {
   // Seal: signed by the real sender, readable only by the recipient.
   const seal = finalizeEvent(
     {
-      created_at: jitteredTimestamp(),
+      created_at: jitteredTimestamp(timestamps),
       kind: KIND_SEAL,
       tags: [],
       content: nip44Encrypt(
@@ -100,7 +128,7 @@ export function giftWrap(rumor: Rumor, senderSk: Uint8Array, recipientPubkey: st
   const ephemeralSk = randomSecretKey()
   return finalizeEvent(
     {
-      created_at: jitteredTimestamp(),
+      created_at: jitteredTimestamp(timestamps),
       kind: KIND_GIFT_WRAP,
       tags: [["p", recipientPubkey]],
       content: nip44Encrypt(
@@ -118,11 +146,12 @@ export function wrapForBoth(
   rumor: Rumor,
   senderSk: Uint8Array,
   recipientPubkey: string,
+  timestamps: WrapTimestampOptions = {},
 ): NostrEvent[] {
   const self = getPublicKey(senderSk)
-  const wraps = [giftWrap(rumor, senderSk, recipientPubkey)]
+  const wraps = [giftWrap(rumor, senderSk, recipientPubkey, timestamps)]
   // Skip the duplicate when messaging yourself.
-  if (recipientPubkey !== self) wraps.push(giftWrap(rumor, senderSk, self))
+  if (recipientPubkey !== self) wraps.push(giftWrap(rumor, senderSk, self, timestamps))
   return wraps
 }
 

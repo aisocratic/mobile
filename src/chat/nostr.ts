@@ -41,7 +41,8 @@ import {
   BuzzApiError,
 } from "./buzz"
 import { lookupPubkey, registerChatIdentity } from "./directory"
-import { buildRumor, rumorPeer, unwrapGift, wrapForBoth } from "./nip17"
+import { estimateClockSkew, publishWrappedDm } from "./dm-send"
+import { buildRumor, rumorPeer, unwrapGift } from "./nip17"
 import {
   channelAddress,
   channelCreateEvent,
@@ -917,11 +918,17 @@ class NostrChatAdapter implements ChatAdapter {
       }
       onPending?.({ ...message, pending: true })
 
-      const wraps = wrapForBoth(rumor, sk, channel.address)
-      // The copy addressed to them is the one that must land; our own copy
-      // only exists so we can read the thread back later.
-      await this.relay.publish(wraps[0])
-      for (const extra of wraps.slice(1)) this.relay.publishQuietly(extra)
+      // Publishes the recipient's wrap (awaited) and our own read-back copy
+      // (fire-and-forget). If the relay rejects the timestamps — jitter fell
+      // outside its window, or this device's clock is skewed — it re-wraps at
+      // corrected time and retries once before letting the error surface.
+      await publishWrappedDm({
+        relay: this.relay,
+        rumor,
+        sk,
+        recipient: channel.address,
+        estimateSkew: () => estimateClockSkew(this.relayUrl),
+      })
       return message
     }
 
