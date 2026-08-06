@@ -86,6 +86,29 @@ export async function fetchReachableUserIds(): Promise<Set<string>> {
 }
 
 /**
+ * Which of these user ids still exist in `public.users`?
+ *
+ * Used to sweep DM threads whose person was merged away during an account
+ * dedupe. Returns null when the directory can't be reached, so callers can
+ * tell "this person is gone" apart from "the network is down" — only the
+ * former is safe to act on.
+ */
+export async function fetchExistingUserIds(ids: string[]): Promise<Set<string> | null> {
+  if (!ids.length) return new Set()
+  try {
+    const { data, error } = await supabase.from("users").select("id").in("id", ids)
+    if (error) return null
+    const found = new Set<string>()
+    for (const raw of (data ?? []) as { id: string | null }[]) {
+      if (raw.id) found.add(raw.id)
+    }
+    return found
+  } catch {
+    return null
+  }
+}
+
+/**
  * Collapse duplicate directory entries for the same person.
  *
  * Production `users` has several rows per human — old sign-ups, Telegram

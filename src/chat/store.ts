@@ -226,6 +226,39 @@ export async function loadThreads(userId: string): Promise<ChatChannel[]> {
   return threads
 }
 
+const UUID_ROUTE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * DM threads pointing at a person who no longer exists.
+ *
+ * After an account dedupe, merged-away `users` rows leave behind threads whose
+ * route id resolves to nobody — every message in them was a black hole. Only
+ * uuid-routed threads are candidates: pubkey-routed threads came from a wrap
+ * that actually arrived, so the peer is real even if the directory has no row.
+ */
+export function staleDmThreadIds(all: ChatChannel[], existingUserIds: Set<string>): string[] {
+  return all
+    .filter((t) => t.kind === "dm" && UUID_ROUTE.test(t.id) && !existingUserIds.has(t.id))
+    .map((t) => t.id)
+}
+
+export function uuidRoutedThreadIds(all: ChatChannel[]): string[] {
+  return all.filter((t) => t.kind === "dm" && UUID_ROUTE.test(t.id)).map((t) => t.id)
+}
+
+export function dropThreads(userId: string, ids: string[]) {
+  if (!ids.length) return
+  const gone = new Set(ids)
+  const kept = threads.filter((t) => !gone.has(t.id))
+  if (kept.length === threads.length) return
+  threads = kept
+  threadsUserId = userId
+  notify()
+  void AsyncStorage.setItem(threadsKey(userId), JSON.stringify(threads)).catch(() => {
+    /* they will be swept again next launch */
+  })
+}
+
 export function rememberThread(userId: string, channel: ChatChannel) {
   if (channel.kind !== "dm") return
   const existing = threads.find((t) => t.id === channel.id)

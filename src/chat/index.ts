@@ -9,6 +9,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 
+import { fetchExistingUserIds } from "@/api/people"
 import { useAuth } from "@/store/auth"
 
 import { BUZZ_RELAY_URL, getNostrAdapter, PUBLIC_RELAY_URL, RELAY_URL } from "./nostr"
@@ -27,6 +28,7 @@ import {
   clearStore,
   getChannelMessages,
   getLastMessage,
+  dropThreads,
   getLastReadAt,
   getProfile,
   getStoreVersion,
@@ -39,7 +41,9 @@ import {
   markMessageFailed,
   putLocalMessage,
   rememberThread,
+  staleDmThreadIds,
   subscribeToStore,
+  uuidRoutedThreadIds,
 } from "./store"
 import type {
   ChatAdapter,
@@ -320,8 +324,18 @@ export function useChannels(): {
   useEffect(() => {
     if (!userId) return
     let active = true
-    void Promise.all([loadThreads(userId), loadReadState()]).then(() => {
-      if (active) setThreadsLoaded(true)
+    void Promise.all([loadThreads(userId), loadReadState()]).then(([loaded]) => {
+      if (!active) return
+      setThreadsLoaded(true)
+      // Sweep threads whose person was merged away during an account dedupe.
+      // Best-effort and conservative: a null from the directory means the
+      // network failed, and nothing is dropped on a failed lookup.
+      const routed = uuidRoutedThreadIds(loaded)
+      if (!routed.length) return
+      void fetchExistingUserIds(routed).then((existing) => {
+        if (!active || !existing) return
+        dropThreads(userId, staleDmThreadIds(getThreads(), existing))
+      })
     })
     return () => {
       active = false
