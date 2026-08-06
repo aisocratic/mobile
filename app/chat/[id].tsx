@@ -12,6 +12,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 
 import {
+  profileDisplayName,
   useChannel,
   useChatStatus,
   useMessages,
@@ -42,10 +43,10 @@ function Bubble({ row }: { row: Row }) {
   const isDark = useIsDark()
   const { message, showAuthor, showMeta } = row
 
-  // Names arrive asynchronously via kind-0 metadata; until then, fall back to a
-  // truncated public key rather than showing nothing.
+  // Names resolve asynchronously — the community directory first, then kind-0
+  // metadata; until either lands, show a short npub rather than a raw hash.
   const profile = useProfile(message.mine ? null : message.authorId)
-  const authorName = profile?.name ?? `${message.authorId.slice(0, 8)}…`
+  const authorName = profileDisplayName(message.authorId, profile)
 
   // The accent is amber in both themes, so pick the readable ink for each.
   const ownInk = isDark ? "#0A0A0A" : "#FFFFFF"

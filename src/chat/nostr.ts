@@ -878,6 +878,8 @@ class NostrChatAdapter implements ChatAdapter {
               pubkey: event.pubkey,
               name: meta.display_name?.trim() || meta.name?.trim() || null,
               avatarUrl: meta.picture?.trim() || null,
+              // Self-published: it never outranks the community directory.
+              source: "relay",
             },
           ])
         } catch {

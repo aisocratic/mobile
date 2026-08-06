@@ -15,6 +15,7 @@
 
 import AsyncStorage from "@react-native-async-storage/async-storage"
 
+import { mergeProfiles } from "./profiles"
 import type { ChatChannel, ChatMessage, ChatProfile } from "./types"
 
 const EMPTY_MESSAGES: ChatMessage[] = []
@@ -131,14 +132,26 @@ export function getProfile(pubkey: string): ChatProfile | undefined {
   return profiles.get(pubkey)
 }
 
+/**
+ * Profiles arrive from two sources — the community directory and kind-0 relay
+ * metadata — in no particular order, so each arrival is merged rather than
+ * stored: the directory's name must survive a later kind-0, and a kind-0
+ * avatar must survive a directory row that has none. See ./profiles.
+ */
 export function ingestProfiles(incoming: ChatProfile[]) {
   let changed = false
   for (const profile of incoming) {
     const previous = profiles.get(profile.pubkey)
-    if (previous && previous.name === profile.name && previous.avatarUrl === profile.avatarUrl) {
+    const merged = mergeProfiles(previous, profile)
+    if (
+      previous &&
+      previous.name === merged.name &&
+      previous.avatarUrl === merged.avatarUrl &&
+      previous.source === merged.source
+    ) {
       continue
     }
-    profiles.set(profile.pubkey, profile)
+    profiles.set(profile.pubkey, merged)
     changed = true
   }
   if (changed) notify()
